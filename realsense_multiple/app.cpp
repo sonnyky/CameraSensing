@@ -43,26 +43,44 @@ void Capture::initialize() {
 	params.filterByInertia = false;
 	params.filterByConvexity = false;
 	params.filterByArea = true;
-	params.maxArea = 10000;
 	params.filterByColor = true;
 	params.blobColor = 255;
 
 	cout << "current minArea : " << to_string(params.minArea) << endl;
-	cout << "current threshold : " << to_string(distanceThreshold);
+	cout << "current low_dist_min : " << to_string(low_dist_min) << endl;
+	cout << "current low_dist_max : " << to_string(low_dist_max) << endl;
+	cout << "current high_dist_min : " << to_string(high_dist_min) << endl;
+	cout << "current high_dist_max : " << to_string(high_dist_max) << endl;
 
 	d = SimpleBlobDetector::create(params);
-	//TODO : set mouse callback on all windows ? maybe just depth ? to calibrate detection area.
-	//cv::setMouseCallback("Color", mouseCallback, this);
+	element = getStructuringElement(cv::MORPH_CROSS,
+		cv::Size(2 * erosion_size + 1, 2 * erosion_size + 1),
+		cv::Point(erosion_size, erosion_size));
+	
 }
 
-void Capture::set_detection_params(int distThres, int minBlobArea) {
+void Capture::set_detection_params(int lowDistMin, int lowDistMax, int highDistMin, int highDistMax, int minBlobArea, int maxBlobArea, int erosionSize) {
 	params.minArea = minBlobArea;
-	distanceThreshold = distThres;
+
+	low_dist_min = lowDistMin;
+	low_dist_max = lowDistMax;
+	high_dist_min = highDistMin;
+	high_dist_max = highDistMax;
+	
+	params.maxArea = maxBlobArea;
+	erosion_size = erosionSize;
 }
 
 void Capture::set_default_params() {
+
+	low_dist_min = 1800;
+	low_dist_max = 1600;
+	high_dist_min = 1200;
+	high_dist_max = 1000;
+
 	params.minArea = 500;
-	distanceThreshold = 1500;
+	params.maxArea = 10000;
+	erosion_size = 6;
 }
 
 void Capture::finalize() {
@@ -249,11 +267,20 @@ inline void Capture::updateDepth()
 				const int h = id_to_frame.second.as<rs2::video_frame>().get_height();
 
 				cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
-
+				cv::Mat depthClone = depthImage.clone();
 				// ‘ÎÛ‹——£‚Ü‚Å‚Ü‚Å‚Ìƒf[ƒ^‚ð0-255‚É‚·‚é
-				depthImage.setTo(0, depthImage > distanceThreshold);
-				depthImage.convertTo(depthImage, CV_8U, 255.0 / distanceThreshold);
+				inRange(depthImage, Scalar(high_dist_max), Scalar(high_dist_min), depthImage);
+				depthImage.convertTo(depthImage, CV_8U);
 
+				inRange(depthClone, Scalar(low_dist_max), Scalar(low_dist_min), depthClone);
+				depthClone.convertTo(depthClone, CV_8U);
+
+				bitwise_or(depthImage, depthClone, depthImage);
+
+				//Refine input image with dilation and erosion
+
+				//erode(depthImage, depthImage, element);  
+				dilate(depthImage, depthImage,element);
 				// Draw detected blobs as red circles.
 				// DrawMatchesFlags::DRAW_RICH_KEYPOINTS flag ensures the size of the circle corresponds to the size of blob
 				keypoints.clear();

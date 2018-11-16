@@ -41,6 +41,9 @@ extern "C" {
 	void com_tinker_get_thresholded_image(realsense_capture* instance, unsigned char * data,  int &width, int &height) {
 		instance->get_thresholded_image(data, width, height);
 	}
+	void com_tinker_get_color_image(realsense_capture* instance, unsigned char * data, int &width, int &height) {
+		instance->get_color_image(data, width, height);
+	}
 
 	void com_tinker_stop_all_devices(realsense_capture* instance) {
 		instance->close_all_devices();
@@ -55,7 +58,7 @@ extern "C" {
 			 image_tl_x, image_tl_y, image_tr_x, image_tr_y, image_bl_x, image_bl_y, image_br_x, image_br_y, size);
 	}
 
-	void com_tinker_setup_detection_params(realsense_capture* instance, int dist, int minBlobArea) {
-		instance->setup_detection_params(dist, minBlobArea);
+	void com_tinker_setup_detection_params(realsense_capture* instance, int lowDistMin, int lowDistMax, int maxDistMin, int maxDistMax, int minBlobArea, int maxBlobArea, int erosionSize, int adjustment) {
+		instance->setup_detection_params(lowDistMin, lowDistMax, maxDistMin, maxDistMax, minBlobArea, maxBlobArea, erosionSize, adjustment);
 	}
 }

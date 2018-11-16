@@ -20,11 +20,12 @@ int main(int argc, char* argv[])
 							 // Register callback for tracking which devices are currently connected
 
 							 // Parameter setup.
-		if (argc == 3) {
+		if (argc == 8) {
 			cout << "Setting up parameters" << endl;
-			capture.set_detection_params(atoi(argv[1]), atoi(argv[2]));
+			capture.set_detection_params(atoi(argv[1]), atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), atoi(argv[7]));
 		}
 		else {
+			cout << "Expecting four parameters. Setting default parameters" << endl;
 			capture.set_default_params();
 		}
 

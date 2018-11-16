@@ -13,10 +13,12 @@ extern "C" {
 
 	common_api const people_position * com_tinker_get_depth(realsense_capture* instance, int &size);
 	common_api void com_tinker_get_thresholded_image(realsense_capture* instance, unsigned char * data, int &width, int &height);
+	common_api void com_tinker_get_color_image(realsense_capture* instance, unsigned char * data, int &width, int &height);
+
 	common_api void com_tinker_stop_all_devices(realsense_capture* instance);
 	common_api void com_tinker_remove_devices(realsense_capture* instance);
 	common_api void com_tinker_destroy_class(realsense_capture* instance);
-	common_api void com_tinker_setup_detection_params(realsense_capture* instance, int dist, int minBlobArea);
+	common_api void com_tinker_setup_detection_params(realsense_capture* instance, int lowDistMin, int lowDistMax, int maxDistMin, int maxDistMax, int minBlobArea, int maxBlobArea = 10000, int erosionSize = 6, int adjustment = 20);
 	common_api const float * com_tinker_get_homography(realsense_capture* instance, float proj_tl_x, float proj_tl_y, float proj_tr_x, float proj_tr_y, float proj_bl_x, float proj_bl_y, float proj_br_x, float proj_br_y,
 		float image_tl_x, float image_tl_y, float image_tr_x, float image_tr_y, float image_bl_x, float image_bl_y, float image_br_x, float image_br_y, int &size);
 }

@@ -58,11 +58,13 @@ const ::google::protobuf::uint32 TableStruct::offsets[] GOOGLE_PROTOBUF_ATTRIBUT
   ~0u,  // no _weak_field_map_
   GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::zaboom::people_position, x_),
   GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::zaboom::people_position, y_),
+  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::zaboom::people_position, device_number_),
+  ~0u,
   ~0u,
   ~0u,
 };
 static const ::google::protobuf::internal::MigrationSchema schemas[] GOOGLE_PROTOBUF_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
-  { 0, 7, sizeof(::zaboom::people_position)},
+  { 0, 8, sizeof(::zaboom::people_position)},
 };
 
 static ::google::protobuf::Message const * const file_default_instances[] = {
@@ -91,11 +93,12 @@ void protobuf_RegisterTypes(const ::std::string&) {
 void AddDescriptorsImpl() {
   InitDefaults();
   static const char descriptor[] GOOGLE_PROTOBUF_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
-      "\n\024proto/position.proto\022\006zaboom\"\'\n\017people"
-      "_position\022\t\n\001x\030\001 \003(\003\022\t\n\001y\030\002 \003(\003"
+      "\n\024proto/position.proto\022\006zaboom\">\n\017people"
+      "_position\022\t\n\001x\030\001 \003(\002\022\t\n\001y\030\002 \003(\002\022\025\n\rdevic"
+      "e_number\030\003 \003(\t"
   };
   ::google::protobuf::DescriptorPool::InternalAddGeneratedFile(
-      descriptor, 71);
+      descriptor, 94);
   ::google::protobuf::MessageFactory::InternalRegisterGeneratedFile(
     "proto/position.proto", &protobuf_RegisterTypes);
 }
@@ -120,6 +123,7 @@ void people_position::InitAsDefaultInstance() {
 #if !defined(_MSC_VER) || _MSC_VER >= 1900
 const int people_position::kXFieldNumber;
 const int people_position::kYFieldNumber;
+const int people_position::kDeviceNumberFieldNumber;
 #endif  // !defined(_MSC_VER) || _MSC_VER >= 1900
 
 people_position::people_position()
@@ -136,7 +140,8 @@ people_position::people_position(const people_position& from)
       _has_bits_(from._has_bits_),
       _cached_size_(0),
       x_(from.x_),
-      y_(from.y_) {
+      y_(from.y_),
+      device_number_(from.device_number_) {
   _internal_metadata_.MergeFrom(from._internal_metadata_);
   // @@protoc_insertion_point(copy_constructor:zaboom.people_position)
 }
@@ -184,6 +189,7 @@ void people_position::Clear() {
 
   x_.Clear();
   y_.Clear();
+  device_number_.Clear();
   _has_bits_.Clear();
   _internal_metadata_.Clear();
 }
@@ -198,18 +204,18 @@ bool people_position::MergePartialFromCodedStream(
     tag = p.first;
     if (!p.second) goto handle_unusual;
     switch (::google::protobuf::internal::WireFormatLite::GetTagFieldNumber(tag)) {
-      // repeated int64 x = 1;
+      // repeated float x = 1;
       case 1: {
         if (static_cast< ::google::protobuf::uint8>(tag) ==
-            static_cast< ::google::protobuf::uint8>(8u /* 8 & 0xFF */)) {
+            static_cast< ::google::protobuf::uint8>(13u /* 13 & 0xFF */)) {
           DO_((::google::protobuf::internal::WireFormatLite::ReadRepeatedPrimitive<
-                   ::google::protobuf::int64, ::google::protobuf::internal::WireFormatLite::TYPE_INT64>(
-                 1, 8u, input, this->mutable_x())));
+                   float, ::google::protobuf::internal::WireFormatLite::TYPE_FLOAT>(
+                 1, 13u, input, this->mutable_x())));
         } else if (
             static_cast< ::google::protobuf::uint8>(tag) ==
             static_cast< ::google::protobuf::uint8>(10u /* 10 & 0xFF */)) {
           DO_((::google::protobuf::internal::WireFormatLite::ReadPackedPrimitiveNoInline<
-                   ::google::protobuf::int64, ::google::protobuf::internal::WireFormatLite::TYPE_INT64>(
+                   float, ::google::protobuf::internal::WireFormatLite::TYPE_FLOAT>(
                  input, this->mutable_x())));
         } else {
           goto handle_unusual;
@@ -217,19 +223,36 @@ bool people_position::MergePartialFromCodedStream(
         break;
       }
 
-      // repeated int64 y = 2;
+      // repeated float y = 2;
       case 2: {
         if (static_cast< ::google::protobuf::uint8>(tag) ==
-            static_cast< ::google::protobuf::uint8>(16u /* 16 & 0xFF */)) {
+            static_cast< ::google::protobuf::uint8>(21u /* 21 & 0xFF */)) {
           DO_((::google::protobuf::internal::WireFormatLite::ReadRepeatedPrimitive<
-                   ::google::protobuf::int64, ::google::protobuf::internal::WireFormatLite::TYPE_INT64>(
-                 1, 16u, input, this->mutable_y())));
+                   float, ::google::protobuf::internal::WireFormatLite::TYPE_FLOAT>(
+                 1, 21u, input, this->mutable_y())));
         } else if (
             static_cast< ::google::protobuf::uint8>(tag) ==
             static_cast< ::google::protobuf::uint8>(18u /* 18 & 0xFF */)) {
           DO_((::google::protobuf::internal::WireFormatLite::ReadPackedPrimitiveNoInline<
-                   ::google::protobuf::int64, ::google::protobuf::internal::WireFormatLite::TYPE_INT64>(
+                   float, ::google::protobuf::internal::WireFormatLite::TYPE_FLOAT>(
                  input, this->mutable_y())));
+        } else {
+          goto handle_unusual;
+        }
+        break;
+      }
+
+      // repeated string device_number = 3;
+      case 3: {
+        if (static_cast< ::google::protobuf::uint8>(tag) ==
+            static_cast< ::google::protobuf::uint8>(26u /* 26 & 0xFF */)) {
+          DO_(::google::protobuf::internal::WireFormatLite::ReadString(
+                input, this->add_device_number()));
+          ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
+            this->device_number(this->device_number_size() - 1).data(),
+            static_cast<int>(this->device_number(this->device_number_size() - 1).length()),
+            ::google::protobuf::internal::WireFormat::PARSE,
+            "zaboom.people_position.device_number");
         } else {
           goto handle_unusual;
         }
@@ -262,16 +285,26 @@ void people_position::SerializeWithCachedSizes(
   ::google::protobuf::uint32 cached_has_bits = 0;
   (void) cached_has_bits;
 
-  // repeated int64 x = 1;
+  // repeated float x = 1;
   for (int i = 0, n = this->x_size(); i < n; i++) {
-    ::google::protobuf::internal::WireFormatLite::WriteInt64(
+    ::google::protobuf::internal::WireFormatLite::WriteFloat(
       1, this->x(i), output);
   }
 
-  // repeated int64 y = 2;
+  // repeated float y = 2;
   for (int i = 0, n = this->y_size(); i < n; i++) {
-    ::google::protobuf::internal::WireFormatLite::WriteInt64(
+    ::google::protobuf::internal::WireFormatLite::WriteFloat(
       2, this->y(i), output);
+  }
+
+  // repeated string device_number = 3;
+  for (int i = 0, n = this->device_number_size(); i < n; i++) {
+    ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
+      this->device_number(i).data(), static_cast<int>(this->device_number(i).length()),
+      ::google::protobuf::internal::WireFormat::SERIALIZE,
+      "zaboom.people_position.device_number");
+    ::google::protobuf::internal::WireFormatLite::WriteString(
+      3, this->device_number(i), output);
   }
 
   if (_internal_metadata_.have_unknown_fields()) {
@@ -288,13 +321,23 @@ void people_position::SerializeWithCachedSizes(
   ::google::protobuf::uint32 cached_has_bits = 0;
   (void) cached_has_bits;
 
-  // repeated int64 x = 1;
+  // repeated float x = 1;
   target = ::google::protobuf::internal::WireFormatLite::
-    WriteInt64ToArray(1, this->x_, target);
+    WriteFloatToArray(1, this->x_, target);
 
-  // repeated int64 y = 2;
+  // repeated float y = 2;
   target = ::google::protobuf::internal::WireFormatLite::
-    WriteInt64ToArray(2, this->y_, target);
+    WriteFloatToArray(2, this->y_, target);
+
+  // repeated string device_number = 3;
+  for (int i = 0, n = this->device_number_size(); i < n; i++) {
+    ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
+      this->device_number(i).data(), static_cast<int>(this->device_number(i).length()),
+      ::google::protobuf::internal::WireFormat::SERIALIZE,
+      "zaboom.people_position.device_number");
+    target = ::google::protobuf::internal::WireFormatLite::
+      WriteStringToArray(3, this->device_number(i), target);
+  }
 
   if (_internal_metadata_.have_unknown_fields()) {
     target = ::google::protobuf::internal::WireFormat::SerializeUnknownFieldsToArray(
@@ -313,22 +356,30 @@ size_t people_position::ByteSizeLong() const {
       ::google::protobuf::internal::WireFormat::ComputeUnknownFieldsSize(
         _internal_metadata_.unknown_fields());
   }
-  // repeated int64 x = 1;
+  // repeated float x = 1;
   {
-    size_t data_size = ::google::protobuf::internal::WireFormatLite::
-      Int64Size(this->x_);
+    unsigned int count = static_cast<unsigned int>(this->x_size());
+    size_t data_size = 4UL * count;
     total_size += 1 *
                   ::google::protobuf::internal::FromIntSize(this->x_size());
     total_size += data_size;
   }
 
-  // repeated int64 y = 2;
+  // repeated float y = 2;
   {
-    size_t data_size = ::google::protobuf::internal::WireFormatLite::
-      Int64Size(this->y_);
+    unsigned int count = static_cast<unsigned int>(this->y_size());
+    size_t data_size = 4UL * count;
     total_size += 1 *
                   ::google::protobuf::internal::FromIntSize(this->y_size());
     total_size += data_size;
+  }
+
+  // repeated string device_number = 3;
+  total_size += 1 *
+      ::google::protobuf::internal::FromIntSize(this->device_number_size());
+  for (int i = 0, n = this->device_number_size(); i < n; i++) {
+    total_size += ::google::protobuf::internal::WireFormatLite::StringSize(
+      this->device_number(i));
   }
 
   int cached_size = ::google::protobuf::internal::ToCachedSize(total_size);
@@ -362,6 +413,7 @@ void people_position::MergeFrom(const people_position& from) {
 
   x_.MergeFrom(from.x_);
   y_.MergeFrom(from.y_);
+  device_number_.MergeFrom(from.device_number_);
 }
 
 void people_position::CopyFrom(const ::google::protobuf::Message& from) {
@@ -390,6 +442,7 @@ void people_position::InternalSwap(people_position* other) {
   using std::swap;
   x_.InternalSwap(&other->x_);
   y_.InternalSwap(&other->y_);
+  device_number_.InternalSwap(&other->device_number_);
   swap(_has_bits_[0], other->_has_bits_[0]);
   _internal_metadata_.Swap(&other->_internal_metadata_);
   swap(_cached_size_, other->_cached_size_);

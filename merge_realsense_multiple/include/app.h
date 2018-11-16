@@ -52,6 +52,7 @@ class Capture {
 		Point2f position;
 		Point2f overlap;
 		Point2f detection_limit;
+		vector<Point2i> obstacles;
 	};
 private :
 	rs2::config cfg;
@@ -59,7 +60,7 @@ private :
 	rs2::colorizer color_map;
 
 	// Network comms
-	char* host_name = "127.0.0.1";
+	const char* host_name = "127.0.0.1";
 	int port = 1101;
 	int iResult;
 	SOCKET ConnectSocket = INVALID_SOCKET;
@@ -67,6 +68,9 @@ private :
 	int buf_length;
 	char recvbuf[512];
 	int recvbuflen = 512;
+
+	// check if position adjustment is done by client
+	int positionAdjustByClient;
 
 	// vector of serialized protobuf objects
 	vector<string> serialized_positions;
@@ -76,13 +80,26 @@ private :
 
 	// Blob detection
 	SimpleBlobDetector::Params params;
+	int low_dist_min, low_dist_max, high_dist_min, high_dist_max;
+	int frame_count;
+
 	Ptr<SimpleBlobDetector> d;
 	std::vector<KeyPoint> keypoints;
 	std::vector<Vec2i> people_pos;
 
-	// Variables to compute homography
+	// Variables to erode and dilate image to improve detection
+	int erosion_size;
+	Mat element;
+	void init_morph_element();
+
+	// Variable to adjust point to be closer to center point
+	double maxRadius;
+	int adjustment_;
+
+	// Homography variables
 	Point2f topLeft, topRight, bottomLeft, bottomRight;
 	Point2f topLeftImage, topRightImage, bottomLeftImage, bottomRightImage;
+	Mat homography;
 
 	std::mutex _mutex;
 	std::map<std::string, view_port> _devices;
@@ -98,6 +115,8 @@ public:
 	void run();
 
 	// Calibration functions
+	void set_homography_matrix(Mat mat);
+	void read_homography_file();
 	void calcHomographyMatrix(vector<Point2f> pts_src, vector<Point2f> pts_dest);
 	void setRangePoints(int topLeftX, int topLeftY, int topRightX, int topRightY, int bottomLeftX, int bottomLeftY, int bottomRightX, int bottomRightY);
 
@@ -107,10 +126,12 @@ public:
 	size_t Capture::device_count();
 
 	// Setting capture and image processing parameters
-	void set_detection_params(int distThres, int minBlobArea);
+	void set_detection_params(int lowDistMin, int lowDistMax, int maxDistMin, int maxDistMax, int minBlobArea, int maxBlobArea, int erosionSize, int adjustment);
 	void set_default_params();
+	void set_adjustment_mode(int mode);
 
 	// Networking functions
+	void set_server_ip(const char * host);
 	void setup_socket();
 	void send_length_to_socket(int buf_to_send);
 	bool receive_length_confirmation();

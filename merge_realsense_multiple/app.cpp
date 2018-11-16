@@ -43,27 +43,75 @@ void Capture::initialize() {
 	params.filterByInertia = false;
 	params.filterByConvexity = false;
 	params.filterByArea = true;
-	params.maxArea = 10000;
 	params.filterByColor = true;
 	params.blobColor = 255;
 
+	maxRadius = sqrt((360 * 360) + (640 * 640));
+	cout << "maxRadius when init : " << to_string(maxRadius) << endl;
+
 	cout << "current minArea : " << to_string(params.minArea) << endl;
-	cout << "current threshold : " << to_string(distanceThreshold);
-	can_send_data = true;
+	cout << "current adjustment : " << to_string(adjustment_);
+	can_send_data = false;
 
 	d = SimpleBlobDetector::create(params);
-	//TODO : set mouse callback on all windows ? maybe just depth ? to calibrate detection area.
-	//cv::setMouseCallback("Color", mouseCallback, this);
+	
 }
 
-void Capture::set_detection_params(int distThres, int minBlobArea) {
-	params.minArea = minBlobArea;
-	distanceThreshold = distThres;
+void Capture::set_server_ip(const char * host) {
+	host_name = host;
 }
+
+void Capture::set_detection_params(int lowDistMin, int lowDistMax, int maxDistMin, int maxDistMax, int minBlobArea, int maxBlobArea, int erosionSize, int adjustment) {
+	params.minArea = minBlobArea;
+
+	low_dist_min = lowDistMin;
+	low_dist_max = lowDistMax;
+	high_dist_min = maxDistMin;
+	high_dist_max = maxDistMax;
+	adjustment_ = adjustment;
+	params.maxArea = maxBlobArea;
+	erosion_size = erosionSize;
+}
+
+void Capture::init_morph_element() {
+	element = getStructuringElement(cv::MORPH_CROSS,
+		cv::Size(2 * erosion_size + 1, 2 * erosion_size + 1),
+		cv::Point(erosion_size, erosion_size));
+}
+
 
 void Capture::set_default_params() {
 	params.minArea = 500;
-	distanceThreshold = 1500;
+	params.maxArea = 10000;
+	low_dist_min = 1800;
+	low_dist_max = 1600;
+	high_dist_min = 1200;
+	high_dist_max = 1000;
+	erosion_size = 6;
+	adjustment_ = 20;
+
+	positionAdjustByClient = 1; // 1 means server side does not add any modification to position
+
+	homography = (Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);
+}
+
+void Capture::set_adjustment_mode(int mode) {
+	if (mode != 1 && mode != 0) {
+		positionAdjustByClient = 1;
+	}
+	else {
+		positionAdjustByClient = mode;
+	}
+}
+
+void Capture::set_homography_matrix(Mat mat) {
+	homography = mat;
+}
+
+void Capture::read_homography_file() {
+	// ASSUMPTION : file is in the same folder
+	FileStorage fs("homography.xml", FileStorage::READ);
+	fs["Homography"] >> homography;
 }
 
 void Capture::finalize() {
@@ -114,12 +162,12 @@ void Capture::enable_device(rs2::device dev)
 		// Check if the serial number is listed
 		if (calib_settings["devices"][i]["serial_number"].asString() == serial_number) {
 			// Found matching entry
-			pos_val.x = calib_settings["devices"][0]["pos_x"].asFloat();
-			pos_val.y = calib_settings["devices"][0]["pos_y"].asFloat();
-			detect_limit.x = calib_settings["devices"][0]["limit_x"].asFloat();
-			detect_limit.y = calib_settings["devices"][0]["limit_y"].asFloat();
-			overlap.x = calib_settings["devices"][0]["overlap_x"].asFloat();
-			overlap.y = calib_settings["devices"][0]["overlap_y"].asFloat();
+			pos_val.x = calib_settings["devices"][i]["pos_x"].asFloat();
+			pos_val.y = calib_settings["devices"][i]["pos_y"].asFloat();
+			detect_limit.x = calib_settings["devices"][i]["limit_x"].asFloat();
+			detect_limit.y = calib_settings["devices"][i]["limit_y"].asFloat();
+			overlap.x = calib_settings["devices"][i]["overlap_x"].asFloat();
+			overlap.y = calib_settings["devices"][i]["overlap_y"].asFloat();
 		}
 	}
 
@@ -258,7 +306,7 @@ inline void Capture::updateDepth()
 	positions.clear();
 	serialized_positions.clear();
 	buf_length = 0;
-	//can_send_data = false;
+	can_send_data = false;
 
 	zaboom::people_position data_to_send = zaboom::people_position();
 	int total_data = 0;
@@ -281,9 +329,17 @@ inline void Capture::updateDepth()
 
 				cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
 
+				cv::Mat depthClone = depthImage.clone();
 				// ‘ÎÛ‹——£‚Ü‚Å‚Ü‚Å‚Ìƒf[ƒ^‚ð0-255‚É‚·‚é
-				depthImage.setTo(0, depthImage > distanceThreshold);
-				depthImage.convertTo(depthImage, CV_8U, 255.0 / distanceThreshold);
+				inRange(depthImage, Scalar(high_dist_max), Scalar(high_dist_min), depthImage);
+				depthImage.convertTo(depthImage, CV_8U);
+
+				inRange(depthClone, Scalar(low_dist_max), Scalar(low_dist_min), depthClone);
+				depthClone.convertTo(depthClone, CV_8U);
+
+				bitwise_or(depthImage, depthClone, depthImage);
+				// dilate image to fill out the gaps
+				dilate(depthImage, depthImage, element);
 
 				// Draw detected blobs as red circles.
 				// DrawMatchesFlags::DRAW_RICH_KEYPOINTS flag ensures the size of the circle corresponds to the size of blob
@@ -294,23 +350,42 @@ inline void Capture::updateDepth()
 				// TODO : apply transformation according to camera position
 				for (int i = 0; i < one_set_of_keypoints.size(); i++) {
 
-					if (one_set_of_keypoints[i].pt.x > view.second.detection_limit.x || one_set_of_keypoints[i].pt.y > view.second.detection_limit.y) {
+					int pos_x = one_set_of_keypoints[i].pt.x; int pos_y = one_set_of_keypoints[i].pt.y;
+
+					if ( pos_x > view.second.detection_limit.x || pos_y > view.second.detection_limit.y) {
 						continue;
 					}
 
-					/*zaboom::people_position pos;
-					pos.set_x(i, one_set_of_keypoints[i].pt.x + (view.second.position.x * 1280));
-					pos.set_y(i, one_set_of_keypoints[i].pt.y + (view.second.position.y * 720));
-					string buf;*/
-					/*pos.SerializeToString(&buf);
-					serialized_positions.push_back(buf);*/
-					data_to_send.add_x((int)(one_set_of_keypoints[i].pt.x + (view.second.position.x * 1280)));
-					data_to_send.add_y((int)(one_set_of_keypoints[i].pt.y + (view.second.position.x * 720)));
-					
+					// positions are already adjusted to the main axes system
+					// x and y for view.second.position are reversed because in the calib file, x denotes row and y denotes column
+					// but in the image coordinates, x is the horizontal direction and y is vertical
+					vector<Point2f> img, dst;
+
+					//ASSUMPTION : image is 1280 x 720
+					double pos_from_center_x = pos_x - 640; double pos_from_center_y = pos_y - 360;
+					double angle_from_center = atan2(pos_from_center_y, pos_from_center_x);
+					double magnitude = sqrt( (pos_from_center_x*pos_from_center_x) + (pos_from_center_y * pos_from_center_y) );
+					//cout << "maxRadius : " << to_string(maxRadius)<< endl;
+					double adjusted_magnitude = magnitude - ( (magnitude / maxRadius) * (double) adjustment_);
+
+					//cout << "adjusted_magnitude" << to_string(adjusted_magnitude)<< endl;
+
+					int adjusted_x = (int) (adjusted_magnitude * cos(angle_from_center)) + 640;
+					int adjusted_y = (int) (adjusted_magnitude * sin(angle_from_center)) + 360;
+
+					if (positionAdjustByClient == 0) {
+						img.push_back(Point((float)(adjusted_x + (view.second.position.y * 1280) - view.second.overlap.x), (float)(adjusted_y + (view.second.position.x * 720) - view.second.overlap.y)));
+					}
+					else {
+						img.push_back(Point((float)(adjusted_x/1280), (float)(adjusted_y/720)));
+					}
+					perspectiveTransform(img, dst, homography);
+
+					data_to_send.add_x( dst[0].x);
+					data_to_send.add_y( dst[0].y);
+					data_to_send.add_device_number(view.second.device_number);
 					total_data++;
 				}
-
-				// TODO : Append to a global list of detected blobs. need mutex ?
 
 				// Display in a GUI
 				imshow(depth_name.c_str(), depthImage);
@@ -319,28 +394,15 @@ inline void Capture::updateDepth()
 		device_no++;
 	}
 
-	// Send through socket
+	// Send through socket. data_to_send contains positions from multiple connected devices
 	string newBuf;
 	data_to_send.SerializeToString(&newBuf);
 
-	buf_length = (int)serialized_positions.size();
-	//if (buf_length > 0) can_send_data = true;
-	if (total_data > 2 && can_send_data) {
+	if (total_data > 0) {
 		cout << "ByteSize object : " << to_string(data_to_send.ByteSize()) << endl;
 
-		can_send_data = false;
-		send_length_to_socket(total_data);
+		send_length_to_socket(data_to_send.ByteSize());
 		send_data(newBuf.data(), data_to_send.ByteSize());
-		zaboom::people_position test_element;
-		test_element.ParseFromString(newBuf);
-		cout <<"total data : " <<to_string( total_data) << endl;
-		cout << "size of string: " << to_string( sizeof(newBuf)) << endl;
-		cout << "size of proto : " << to_string(sizeof(zaboom::people_position)) << endl;
-		cout << "size of newBuf.data : " << to_string(sizeof(newBuf.data())) << endl;
-		cout << "number of elements in object : " << to_string(test_element.ByteSize()) << endl;
-		cout << test_element.DebugString() << endl;
-		
-	
 		if (iResult <= 0) {
 			close_socket();
 		}
@@ -377,6 +439,8 @@ void Capture::setup_socket() {
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
+
+	cout << "connecting to : " << host_name << endl;
 
 	// Resolve the server address and port
 	iResult = getaddrinfo(host_name, "1101", &hints, &result);

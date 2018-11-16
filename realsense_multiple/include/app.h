@@ -46,7 +46,7 @@ private :
 	rs2::colorizer color_map;
 
 	// Active distance threshold
-	int distanceThreshold;
+	int low_dist_min, low_dist_max, high_dist_min, high_dist_max;
 
 	// Blob detection
 	SimpleBlobDetector::Params params;
@@ -60,6 +60,10 @@ private :
 
 	std::mutex _mutex;
 	std::map<std::string, view_port> _devices;
+
+	// Variables to erode and dilate image to improve detection
+	int erosion_size;
+	Mat element;
 
 public:
 	// Constructor
@@ -79,7 +83,7 @@ public:
 	size_t Capture::device_count();
 
 	// Setting capture and image processing parameters
-	void set_detection_params(int distThres, int minBlobArea);
+	void set_detection_params(int lowDistMin, int lowDistMax, int highDistMin, int highDistMax, int minBlobArea, int maxBlobArea, int erosionSize);
 	void set_default_params();
 
 private :

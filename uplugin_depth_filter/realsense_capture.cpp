@@ -47,6 +47,7 @@ LPSTR* realsense_capture::list_devices() {
 	if (count > 0) {
 		// Initiate OpenCV image processing if at least one camera is found
 		init_blob_detector();
+		init_morph_element();
 	}
 
 	return pData;
@@ -75,7 +76,7 @@ void realsense_capture::enable_device(device dev) {
 	rs2::pipeline_profile profile = p.start(c);
 
 	// Hold it internally
-	_devices.emplace(serial_number, view_port{ {}, p, profile, serial_number });
+	_devices.emplace(serial_number, view_port{ {}, {}, p, profile, serial_number });
 }
 
 void realsense_capture::remove_devices()
@@ -92,22 +93,41 @@ void realsense_capture::remove_devices()
 
 void realsense_capture::setup_default_params() {
 	params.minArea = 500;
-	distanceThreshold = 1500;
+	params.maxArea = 10000;
+	low_dist_min = 1800;
+	low_dist_max = 1600;
+	high_dist_min = 1200;
+	high_dist_max = 1000;
+	erosion_size = 6;
+	adjustment_ = 20;
+	maxRadius = sqrt((360 * 360) + (640 * 640));
 }
 
-void realsense_capture::setup_detection_params(int dist, int minBlobArea) {
+void realsense_capture::setup_detection_params(int lowDistMin, int lowDistMax, int highDistMin, int highDistMax, int minBlobArea, int maxBlobArea, int erosionSize, int adjustment) {
 	params.minArea = minBlobArea;
-	distanceThreshold = dist;
+	adjustment_ = adjustment;
+	low_dist_min = lowDistMin;
+	low_dist_max = lowDistMax;
+	high_dist_min = highDistMin;
+	high_dist_max = highDistMax;
+
+	params.maxArea = maxBlobArea;
+	erosion_size = erosionSize;
 }
 
 void realsense_capture::init_blob_detector() {
 	params.filterByInertia = false;
 	params.filterByConvexity = false;
 	params.filterByArea = true;
-	params.maxArea = 10000;
 	params.filterByColor = true;
 	params.blobColor = 255;
 	d = SimpleBlobDetector::create(params);
+}
+
+void realsense_capture::init_morph_element() {
+	element = getStructuringElement(cv::MORPH_CROSS,
+		cv::Size(2 * erosion_size + 1, 2 * erosion_size + 1),
+		cv::Point(erosion_size, erosion_size));
 }
 
 void realsense_capture::poll_frames() {
@@ -119,10 +139,10 @@ void realsense_capture::poll_frames() {
 		rs2::frameset frameset;
 		if (view.second.pipe.poll_for_frames(&frameset))
 		{
-			//rs2::frame new_color_frame = frameset.get_color_frame();
+			rs2::frame new_color_frame = frameset.get_color_frame();
 			rs2::frame new_depth_frame = frameset.get_depth_frame();
 			int stream_id = new_depth_frame.get_profile().unique_id();
-			//view.second.color_frame[stream_id] = new_color_frame; //update color view port with the new stream
+			view.second.color_frame[stream_id] = new_color_frame; //update color view port with the new stream
 			view.second.depth_frame[stream_id] = new_depth_frame; //update depth view port with the new stream
 		}
 	}
@@ -159,9 +179,17 @@ const people_position* realsense_capture::get_depth(int &size) {
 
 				// TODO : Opencv blob detection
 				cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
-				// Active sensing range is normalized to 0 - 255 range.
-				depthImage.setTo(0, depthImage > distanceThreshold);
-				depthImage.convertTo(depthImage, CV_8U, 255.0 / distanceThreshold);
+				cv::Mat depthClone = depthImage.clone();
+				// 対象距離までまでのデータを0-255にする
+				inRange(depthImage, Scalar(high_dist_max), Scalar(high_dist_min), depthImage);
+				depthImage.convertTo(depthImage, CV_8U);
+
+				inRange(depthClone, Scalar(low_dist_max), Scalar(low_dist_min), depthClone);
+				depthClone.convertTo(depthClone, CV_8U);
+
+				bitwise_or(depthImage, depthClone, depthImage);
+				// dilate image to fill out the gaps
+				dilate(depthImage, depthImage, element);
 
 				keypoints.clear();
 				d->detect(depthImage, keypoints);
@@ -170,7 +198,18 @@ const people_position* realsense_capture::get_depth(int &size) {
 				for (int i = 0; i < this_size; i++) {
 					this_pos.x = keypoints[i].pt.x;
 					this_pos.y = keypoints[i].pt.y;
-					//positions.push_back(this_pos);
+					
+					//ASSUMPTION : image is 1280 x 720
+					double pos_from_center_x = this_pos.x - 640; double pos_from_center_y = this_pos.y - 360;
+					double angle_from_center = atan2(pos_from_center_y, pos_from_center_x);
+					double magnitude = sqrt((pos_from_center_x*pos_from_center_x) + (pos_from_center_y * pos_from_center_y));
+					double adjusted_magnitude = magnitude - ((magnitude / maxRadius) * (double)adjustment_);
+					int adjusted_x = (int)(adjusted_magnitude * cos(angle_from_center)) + 640;
+					int adjusted_y = (int)(adjusted_magnitude * sin(angle_from_center)) + 360;
+
+					this_pos.x = adjusted_x;
+					this_pos.y = adjusted_y;
+
 					_people_positions.push_back(this_pos);
 					total_pos_size++;
 				}
@@ -203,6 +242,19 @@ void realsense_capture::get_thresholded_image(unsigned char * data,  int &width,
 		cout << "Not supporting more than one device for now" << endl;
 		return;
 	}
+
+	auto total_number_of_streams = stream_count();
+
+	if (total_number_of_streams == 0)
+	{
+		cout << "No streams available" << endl;
+		depthImage = cv::Mat(720, 1280, CV_16U, Scalar(0));
+		Mat rgbImg;
+		cvtColor(depthImage, rgbImg, CV_GRAY2RGBA);
+		memcpy(data, rgbImg.data, rgbImg.total() * rgbImg.elemSize());
+		return;
+	}
+
 	for (auto&& view : _devices)
 	{
 		// For each device get its pipeline
@@ -220,17 +272,82 @@ void realsense_capture::get_thresholded_image(unsigned char * data,  int &width,
 				height = h;
 
 				depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
-				// Active sensing range is normalized to 0 - 255 range.
-				depthImage.setTo(0, depthImage > distanceThreshold);
-				depthImage.convertTo(depthImage, CV_8U, 255.0 / distanceThreshold);
+				cv::Mat depthClone = depthImage.clone();
+				// 対象距離までまでのデータを0-255にする
+				inRange(depthImage, Scalar(high_dist_max), Scalar(high_dist_min), depthImage);
+				depthImage.convertTo(depthImage, CV_8U);
+
+				inRange(depthClone, Scalar(low_dist_max), Scalar(low_dist_min), depthClone);
+				depthClone.convertTo(depthClone, CV_8U);
+
+				bitwise_or(depthImage, depthClone, depthImage);
+
+				// dilate image to fill out the gaps
+				dilate(depthImage, depthImage, element);
+
+				keypoints.clear();
+				d->detect(depthImage, keypoints);
+				//cout <<"detected : " << to_string( keypoints.size()) << endl;
+				drawKeypoints(depthImage, keypoints, depthImage, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 			}
 		}
 		device_no++;
 	}
 	Mat rgbImg;
-	cvtColor(depthImage, rgbImg, CV_GRAY2RGBA);
+	cvtColor(depthImage, rgbImg, CV_BGR2RGBA);
 	memcpy(data, rgbImg.data, rgbImg.total() * rgbImg.elemSize());
 }
+
+void realsense_capture::get_color_image(unsigned char * data, int &width, int &height) {
+	poll_frames();
+	// frame is assumed to be 640 x 480. TODO : handle if depth frame size is different.
+
+	int device_no = 0;
+	cv::Mat colorImage;
+	if (_devices.size() != 1) {
+		ofstream myfile;
+		myfile.open("multiple_device_error.txt");
+		myfile << "Not supporting more than one device for now\n";
+		myfile.close();
+
+		return;
+	}
+
+	auto total_number_of_streams = stream_count();
+
+	if (total_number_of_streams == 0)
+	{
+		ofstream myfile;
+		myfile.open("streams.txt");
+		myfile << "No streams available\n";
+		myfile.close();
+
+		colorImage = cv::Mat(480, 640, CV_16U, Scalar(0));
+		Mat rgbImg;
+		cvtColor(colorImage, rgbImg, CV_GRAY2RGBA);
+		memcpy(data, rgbImg.data, rgbImg.total() * rgbImg.elemSize());
+		return;
+	}
+
+	for (auto&& view : _devices)
+	{
+		// For each device get its pipeline
+		for (auto&& id_to_frame : view.second.color_frame)
+		{
+			// If the frame is available
+			if (id_to_frame.second)
+			{
+				pipeline_profile cur_pipeline_profile = view.second.profile;
+				colorImage = cv::Mat(Size(640, 480), CV_8UC3, (void*)id_to_frame.second.get_data(), Mat::AUTO_STEP);
+			}
+		}
+		device_no++;
+	}
+	Mat rgbImg;
+	cvtColor(colorImage, rgbImg, CV_BGR2RGBA);
+	memcpy(data, rgbImg.data, rgbImg.total() * rgbImg.elemSize());
+}
+
 
 
 void realsense_capture::set_init_flag(bool flag) {
@@ -323,6 +440,13 @@ int realsense_capture::stream_count()
 	for (auto&& sn_to_dev : _devices)
 	{
 		for (auto&& stream : sn_to_dev.second.depth_frame)
+		{
+			if (stream.second)
+			{
+				count++;
+			}
+		}
+		for (auto&& stream : sn_to_dev.second.color_frame)
 		{
 			if (stream.second)
 			{

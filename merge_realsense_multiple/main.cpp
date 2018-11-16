@@ -34,11 +34,20 @@ int main(int argc, char* argv[])
 		rs2::context ctx;
 
 		// Capture parameters setup
-		if (argc == 3) {
-			cout << "Setting up parameters" << endl;
-			capture.set_detection_params(atoi(argv[1]), atoi(argv[2]));
+		if (argc == 11) {
+			cout << "Detection mode. Setting up detection parameters..." << endl;
+			capture.set_server_ip(argv[1]);
+			capture.set_detection_params(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), atoi(argv[7]), atoi(argv[8]), atoi(argv[9]));
+			capture.set_adjustment_mode(atoi(argv[10]));
+			capture.read_homography_file();
+		}
+		else if (argc == 3) {
+			cout << "Detection mode. changing IP to : " << argv[1] << endl;
+			capture.set_server_ip(argv[1]);
+			capture.set_adjustment_mode(atoi(argv[2]));
 		}
 		else {
+			cout << "Detection mode. Server IP is set to local machine. Setting up default parameters..." << endl;
 			capture.set_default_params();
 		}
 

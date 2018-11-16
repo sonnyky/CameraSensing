@@ -146,29 +146,51 @@ class people_position : public ::google::protobuf::Message /* @@protoc_insertion
 
   // accessors -------------------------------------------------------
 
-  // repeated int64 x = 1;
+  // repeated float x = 1;
   int x_size() const;
   void clear_x();
   static const int kXFieldNumber = 1;
-  ::google::protobuf::int64 x(int index) const;
-  void set_x(int index, ::google::protobuf::int64 value);
-  void add_x(::google::protobuf::int64 value);
-  const ::google::protobuf::RepeatedField< ::google::protobuf::int64 >&
+  float x(int index) const;
+  void set_x(int index, float value);
+  void add_x(float value);
+  const ::google::protobuf::RepeatedField< float >&
       x() const;
-  ::google::protobuf::RepeatedField< ::google::protobuf::int64 >*
+  ::google::protobuf::RepeatedField< float >*
       mutable_x();
 
-  // repeated int64 y = 2;
+  // repeated float y = 2;
   int y_size() const;
   void clear_y();
   static const int kYFieldNumber = 2;
-  ::google::protobuf::int64 y(int index) const;
-  void set_y(int index, ::google::protobuf::int64 value);
-  void add_y(::google::protobuf::int64 value);
-  const ::google::protobuf::RepeatedField< ::google::protobuf::int64 >&
+  float y(int index) const;
+  void set_y(int index, float value);
+  void add_y(float value);
+  const ::google::protobuf::RepeatedField< float >&
       y() const;
-  ::google::protobuf::RepeatedField< ::google::protobuf::int64 >*
+  ::google::protobuf::RepeatedField< float >*
       mutable_y();
+
+  // repeated string device_number = 3;
+  int device_number_size() const;
+  void clear_device_number();
+  static const int kDeviceNumberFieldNumber = 3;
+  const ::std::string& device_number(int index) const;
+  ::std::string* mutable_device_number(int index);
+  void set_device_number(int index, const ::std::string& value);
+  #if LANG_CXX11
+  void set_device_number(int index, ::std::string&& value);
+  #endif
+  void set_device_number(int index, const char* value);
+  void set_device_number(int index, const char* value, size_t size);
+  ::std::string* add_device_number();
+  void add_device_number(const ::std::string& value);
+  #if LANG_CXX11
+  void add_device_number(::std::string&& value);
+  #endif
+  void add_device_number(const char* value);
+  void add_device_number(const char* value, size_t size);
+  const ::google::protobuf::RepeatedPtrField< ::std::string>& device_number() const;
+  ::google::protobuf::RepeatedPtrField< ::std::string>* mutable_device_number();
 
   // @@protoc_insertion_point(class_scope:zaboom.people_position)
  private:
@@ -176,8 +198,9 @@ class people_position : public ::google::protobuf::Message /* @@protoc_insertion
   ::google::protobuf::internal::InternalMetadataWithArena _internal_metadata_;
   ::google::protobuf::internal::HasBits<1> _has_bits_;
   mutable int _cached_size_;
-  ::google::protobuf::RepeatedField< ::google::protobuf::int64 > x_;
-  ::google::protobuf::RepeatedField< ::google::protobuf::int64 > y_;
+  ::google::protobuf::RepeatedField< float > x_;
+  ::google::protobuf::RepeatedField< float > y_;
+  ::google::protobuf::RepeatedPtrField< ::std::string> device_number_;
   friend struct ::protobuf_proto_2fposition_2eproto::TableStruct;
   friend void ::protobuf_proto_2fposition_2eproto::InitDefaultspeople_positionImpl();
 };
@@ -192,64 +215,133 @@ class people_position : public ::google::protobuf::Message /* @@protoc_insertion
 #endif  // __GNUC__
 // people_position
 
-// repeated int64 x = 1;
+// repeated float x = 1;
 inline int people_position::x_size() const {
   return x_.size();
 }
 inline void people_position::clear_x() {
   x_.Clear();
 }
-inline ::google::protobuf::int64 people_position::x(int index) const {
+inline float people_position::x(int index) const {
   // @@protoc_insertion_point(field_get:zaboom.people_position.x)
   return x_.Get(index);
 }
-inline void people_position::set_x(int index, ::google::protobuf::int64 value) {
+inline void people_position::set_x(int index, float value) {
   x_.Set(index, value);
   // @@protoc_insertion_point(field_set:zaboom.people_position.x)
 }
-inline void people_position::add_x(::google::protobuf::int64 value) {
+inline void people_position::add_x(float value) {
   x_.Add(value);
   // @@protoc_insertion_point(field_add:zaboom.people_position.x)
 }
-inline const ::google::protobuf::RepeatedField< ::google::protobuf::int64 >&
+inline const ::google::protobuf::RepeatedField< float >&
 people_position::x() const {
   // @@protoc_insertion_point(field_list:zaboom.people_position.x)
   return x_;
 }
-inline ::google::protobuf::RepeatedField< ::google::protobuf::int64 >*
+inline ::google::protobuf::RepeatedField< float >*
 people_position::mutable_x() {
   // @@protoc_insertion_point(field_mutable_list:zaboom.people_position.x)
   return &x_;
 }
 
-// repeated int64 y = 2;
+// repeated float y = 2;
 inline int people_position::y_size() const {
   return y_.size();
 }
 inline void people_position::clear_y() {
   y_.Clear();
 }
-inline ::google::protobuf::int64 people_position::y(int index) const {
+inline float people_position::y(int index) const {
   // @@protoc_insertion_point(field_get:zaboom.people_position.y)
   return y_.Get(index);
 }
-inline void people_position::set_y(int index, ::google::protobuf::int64 value) {
+inline void people_position::set_y(int index, float value) {
   y_.Set(index, value);
   // @@protoc_insertion_point(field_set:zaboom.people_position.y)
 }
-inline void people_position::add_y(::google::protobuf::int64 value) {
+inline void people_position::add_y(float value) {
   y_.Add(value);
   // @@protoc_insertion_point(field_add:zaboom.people_position.y)
 }
-inline const ::google::protobuf::RepeatedField< ::google::protobuf::int64 >&
+inline const ::google::protobuf::RepeatedField< float >&
 people_position::y() const {
   // @@protoc_insertion_point(field_list:zaboom.people_position.y)
   return y_;
 }
-inline ::google::protobuf::RepeatedField< ::google::protobuf::int64 >*
+inline ::google::protobuf::RepeatedField< float >*
 people_position::mutable_y() {
   // @@protoc_insertion_point(field_mutable_list:zaboom.people_position.y)
   return &y_;
+}
+
+// repeated string device_number = 3;
+inline int people_position::device_number_size() const {
+  return device_number_.size();
+}
+inline void people_position::clear_device_number() {
+  device_number_.Clear();
+}
+inline const ::std::string& people_position::device_number(int index) const {
+  // @@protoc_insertion_point(field_get:zaboom.people_position.device_number)
+  return device_number_.Get(index);
+}
+inline ::std::string* people_position::mutable_device_number(int index) {
+  // @@protoc_insertion_point(field_mutable:zaboom.people_position.device_number)
+  return device_number_.Mutable(index);
+}
+inline void people_position::set_device_number(int index, const ::std::string& value) {
+  // @@protoc_insertion_point(field_set:zaboom.people_position.device_number)
+  device_number_.Mutable(index)->assign(value);
+}
+#if LANG_CXX11
+inline void people_position::set_device_number(int index, ::std::string&& value) {
+  // @@protoc_insertion_point(field_set:zaboom.people_position.device_number)
+  device_number_.Mutable(index)->assign(std::move(value));
+}
+#endif
+inline void people_position::set_device_number(int index, const char* value) {
+  GOOGLE_DCHECK(value != NULL);
+  device_number_.Mutable(index)->assign(value);
+  // @@protoc_insertion_point(field_set_char:zaboom.people_position.device_number)
+}
+inline void people_position::set_device_number(int index, const char* value, size_t size) {
+  device_number_.Mutable(index)->assign(
+    reinterpret_cast<const char*>(value), size);
+  // @@protoc_insertion_point(field_set_pointer:zaboom.people_position.device_number)
+}
+inline ::std::string* people_position::add_device_number() {
+  // @@protoc_insertion_point(field_add_mutable:zaboom.people_position.device_number)
+  return device_number_.Add();
+}
+inline void people_position::add_device_number(const ::std::string& value) {
+  device_number_.Add()->assign(value);
+  // @@protoc_insertion_point(field_add:zaboom.people_position.device_number)
+}
+#if LANG_CXX11
+inline void people_position::add_device_number(::std::string&& value) {
+  device_number_.Add(std::move(value));
+  // @@protoc_insertion_point(field_add:zaboom.people_position.device_number)
+}
+#endif
+inline void people_position::add_device_number(const char* value) {
+  GOOGLE_DCHECK(value != NULL);
+  device_number_.Add()->assign(value);
+  // @@protoc_insertion_point(field_add_char:zaboom.people_position.device_number)
+}
+inline void people_position::add_device_number(const char* value, size_t size) {
+  device_number_.Add()->assign(reinterpret_cast<const char*>(value), size);
+  // @@protoc_insertion_point(field_add_pointer:zaboom.people_position.device_number)
+}
+inline const ::google::protobuf::RepeatedPtrField< ::std::string>&
+people_position::device_number() const {
+  // @@protoc_insertion_point(field_list:zaboom.people_position.device_number)
+  return device_number_;
+}
+inline ::google::protobuf::RepeatedPtrField< ::std::string>*
+people_position::mutable_device_number() {
+  // @@protoc_insertion_point(field_mutable_list:zaboom.people_position.device_number)
+  return &device_number_;
 }
 
 #ifdef __GNUC__
