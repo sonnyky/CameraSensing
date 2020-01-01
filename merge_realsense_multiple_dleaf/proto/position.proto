@@ -1,0 +1,8 @@
+syntax = "proto2";
+
+package zaboom;
+
+message people_position{
+  repeated int64 x = 1;
+  repeated int64 y = 2;
+}

@@ -12,7 +12,7 @@
 #include <iostream>
 #include <cstdio>
 #include <ctime>
-
+#include <mutex>
 #include <wtypes.h>
 #include <comdef.h> 
 #include <string>
@@ -32,7 +32,7 @@
 #include <json/json.h>
 #include "proto/position.pb.h"
 #include <stdexcept>
-#include <mutex>
+
 #include <wrl/client.h>
 using namespace Microsoft::WRL;
 using namespace cv;
@@ -51,27 +51,23 @@ class Capture {
 		string device_number;
 		Point2f position;
 		Point2f overlap;
-		Point2f min_detection_limit;
-		Point2f max_detection_limit;
+		Point2f detection_limit;
 		vector<Point2i> obstacles;
 	};
-private :
+private:
 	rs2::config cfg;
 	rs2::frameset frames;
 	rs2::colorizer color_map;
 
 	// Network comms
 	const char* host_name = "127.0.0.1";
-	int port = 1101;
+	PCSTR port = "1102";
 	int iResult;
 	SOCKET ConnectSocket = INVALID_SOCKET;
 	char *sendbuf = "this is a test";
 	int buf_length;
 	char recvbuf[512];
 	int recvbuflen = 512;
-
-	// check if position adjustment is done by client
-	int positionAdjustByClient;
 
 	// vector of serialized protobuf objects
 	vector<string> serialized_positions;
@@ -107,7 +103,7 @@ private :
 
 	vector<zaboom::people_position> positions;
 
-	bool normalize;
+	bool dleaf_show_detection_window = false;
 
 public:
 	// Constructor
@@ -131,7 +127,7 @@ public:
 	// Setting capture and image processing parameters
 	void set_detection_params(int lowDistMin, int lowDistMax, int maxDistMin, int maxDistMax, int minBlobArea, int maxBlobArea, int erosionSize, int adjustment);
 	void set_default_params();
-	void set_adjustment_mode(int mode);
+	void set_detection_display_param(bool value);
 
 	// Networking functions
 	void set_server_ip(const char * host);
@@ -141,9 +137,8 @@ public:
 	void close_socket();
 	bool can_send_data;
 	void send_data(const char * data, int size);
-	void set_normalize_flag(bool val);
 
-private :
+private:
 	void initialize();
 	void finalize();
 

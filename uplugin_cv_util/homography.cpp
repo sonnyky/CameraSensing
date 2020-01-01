@@ -6,11 +6,11 @@
 /*
 Calibration methods
 */
-const float * _calc_homography(UPoint * src, UPoint * dst, int length) {
+const void _calc_homography(UPoint * src, UPoint * dst, int length, float * data) {
 
 	vector<Point2f> proj_points;
 	vector<Point2f> img_points;
-	vector<float> homographyValues;
+	vector<float> * homographyValues = new vector<float>(length);
 	Point2f point;
 
 	for (int i = 0; i < length; i++) {
@@ -28,10 +28,10 @@ const float * _calc_homography(UPoint * src, UPoint * dst, int length) {
 	}
 	
 	Mat homography = findHomography(proj_points, img_points);
+
 	for (int i = 0; i < homography.rows; i++) {
 		for (int j = 0; j < homography.cols; j++) {
-			homographyValues.push_back((float) homography.at<double>(i, j));
+			data[(i * homography.rows) + j] = (float)homography.at<double>(i, j);
 		}
 	}
-	return &homographyValues[0];
 }

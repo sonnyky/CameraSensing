@@ -17,8 +17,8 @@ extern "C" {
 		instance->destroy_class();
 	}
 
-	void com_tinker_recognition_setup_camera(recognition* instance) {
-		instance->setup_camera();
+	void com_tinker_recognition_setup_camera(recognition* instance, int id) {
+		instance->setup_camera(id);
 	}
 
 	void com_tinker_recognition_get_color_image(recognition* instance, unsigned char * data, int &width, int &height) {

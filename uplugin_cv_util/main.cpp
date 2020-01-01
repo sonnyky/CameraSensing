@@ -21,7 +21,7 @@ extern "C" {
 		instance->destroy_class();
 	}
 
-	const float * com_tinker_cv_util_calc_homography(cv_util* instance, UPoint * src, UPoint * dst, int length) {
-		 return instance->calc_homography( src, dst, length);
+	void com_tinker_cv_util_calc_homography(cv_util* instance, UPoint * src, UPoint * dst, int length, float * data) {
+		 return instance->calc_homography( src, dst, length, data);
 	}
 }

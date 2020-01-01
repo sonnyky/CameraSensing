@@ -9,7 +9,7 @@ extern "C" {
 	common_api const char * com_tinker_recognition_get_plugin_name(recognition* instance);
 	common_api void com_tinker_recognition_destroy_class(recognition* instance);
 
-	common_api void com_tinker_recognition_setup_camera(recognition* instance);
+	common_api void com_tinker_recognition_setup_camera(recognition* instance, int id=0);
 	common_api void com_tinker_recognition_get_color_image(recognition* instance, unsigned char * data, int &width, int &height);
 	common_api void com_tinker_recognition_release_camera(recognition* instance);
 }

@@ -7,8 +7,8 @@
 
 #pragma once
 
-struct UPoint {
-	float x, y, z;
+struct Shapes {
+	int corners, x, y;
 };
 
 using namespace std;
@@ -29,7 +29,7 @@ public:
 	const char * error_message = "No error";
 	const char * get_error_message();
 	void set_error_message(std::string error);
-	void setup_camera();
+	void setup_camera(int id);
 	void get_color_image(unsigned char * data, int &width, int &height);
 	void release_camera();
 	void destroy_class();
@@ -40,5 +40,6 @@ public:
 private:
 	bool init_success_flag;
 	VideoCapture cap;
+	vector<Shapes> list_of_shapes;
 };
 

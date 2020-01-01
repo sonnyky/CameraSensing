@@ -35,6 +35,6 @@ void cv_util::destroy_class() {
 /*
 Calibration methods
 */
-const float * cv_util::calc_homography(UPoint * src, UPoint * dst, int length) {
-	return _calc_homography(src, dst, length);
+const void cv_util::calc_homography(UPoint * src, UPoint * dst, int length, float * data) {
+	return _calc_homography(src, dst, length, data);
 }

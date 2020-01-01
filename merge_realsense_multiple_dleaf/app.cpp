@@ -1,4 +1,4 @@
-#include "app.h"
+ï»¿#include "app.h"
 #include "util.h"
 #include <thread>
 #include <chrono>
@@ -29,15 +29,17 @@ Capture::~Capture()
 
 void Capture::initialize() {
 
-	// OpenCV windows for displaying camera streams
-	for (int i = 0; i < device_count(); i++) {
-		string ss_color, ss_depth;
-		//ss_color = "Color";
-		ss_depth = "Depth";
-		//string color_name = ss_color.append(to_string(i));
-		string depth_name = ss_depth.append(to_string(i));
-		//cvNamedWindow(color_name.c_str(), CV_WINDOW_AUTOSIZE);
-		cvNamedWindow(depth_name.c_str(), CV_WINDOW_AUTOSIZE);
+	if (dleaf_show_detection_window) {
+		// OpenCV windows for displaying camera streams
+		for (int i = 0; i < device_count(); i++) {
+			string ss_color, ss_depth;
+			//ss_color = "Color";
+			ss_depth = "Depth";
+			//string color_name = ss_color.append(to_string(i));
+			string depth_name = ss_depth.append(to_string(i));
+			//cvNamedWindow(color_name.c_str(), CV_WINDOW_AUTOSIZE);
+			cvNamedWindow(depth_name.c_str(), CV_WINDOW_AUTOSIZE);
+		}
 	}
 
 	params.filterByInertia = false;
@@ -54,7 +56,7 @@ void Capture::initialize() {
 	can_send_data = false;
 
 	d = SimpleBlobDetector::create(params);
-	
+
 }
 
 void Capture::set_server_ip(const char * host) {
@@ -73,10 +75,6 @@ void Capture::set_detection_params(int lowDistMin, int lowDistMax, int maxDistMi
 	erosion_size = erosionSize;
 }
 
-void Capture::set_normalize_flag(bool val) {
-	normalize = val;
-}
-
 void Capture::init_morph_element() {
 	element = getStructuringElement(cv::MORPH_CROSS,
 		cv::Size(2 * erosion_size + 1, 2 * erosion_size + 1),
@@ -93,19 +91,14 @@ void Capture::set_default_params() {
 	high_dist_max = 1000;
 	erosion_size = 6;
 	adjustment_ = 20;
-
-	positionAdjustByClient = 1; // 1 means server side does not add any modification to position
-
+	dleaf_show_detection_window = false;
+	cout << "this is the value when setting first time : " << dleaf_show_detection_window << "\n"<< endl;
 	homography = (Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);
 }
 
-void Capture::set_adjustment_mode(int mode) {
-	if (mode != 1 && mode != 0) {
-		positionAdjustByClient = 1;
-	}
-	else {
-		positionAdjustByClient = mode;
-	}
+void Capture::set_detection_display_param(bool value)
+{
+	dleaf_show_detection_window = value;
 }
 
 void Capture::set_homography_matrix(Mat mat) {
@@ -124,16 +117,7 @@ void Capture::finalize() {
 
 void Capture::run()
 {
-	while (true) {
-		
-		if (waitKey(1) == 99) {
-			vector<Point2f> pts_src, pts_dest;
-			pts_src.push_back(topLeftImage); pts_src.push_back(topRightImage); pts_src.push_back(bottomRightImage); pts_src.push_back(bottomLeftImage);
-			pts_dest.push_back(topLeft); pts_dest.push_back(topRight); pts_dest.push_back(bottomRight); pts_dest.push_back(bottomLeft);
-			calcHomographyMatrix(pts_src, pts_dest);
-		}else if(waitKey(1) == 113) break;
-		update();
-	}
+	update();
 }
 
 void Capture::enable_device(rs2::device dev)
@@ -157,10 +141,10 @@ void Capture::enable_device(rs2::device dev)
 	Json::Value calib_settings;
 	calib_file >> calib_settings;
 
-	Point2f pos_val, min_detect_limit, max_detect_limit, overlap;
+	Point2f pos_val, detect_limit, overlap;
 
 	// Set default values
-	pos_val.x = 0; pos_val.y = 0; min_detect_limit.x = 0; min_detect_limit.y = 0; max_detect_limit.x = 1280; max_detect_limit.y = 720; overlap.x = 0; overlap.y = 0;
+	pos_val.x = 0; pos_val.y = 0; detect_limit.x = 1280; detect_limit.y = 720; overlap.x = 0; overlap.y = 0;
 
 	for (int i = 0; i < calib_settings["devices"].size(); i++) {
 		// Check if the serial number is listed
@@ -168,10 +152,8 @@ void Capture::enable_device(rs2::device dev)
 			// Found matching entry
 			pos_val.x = calib_settings["devices"][i]["pos_x"].asFloat();
 			pos_val.y = calib_settings["devices"][i]["pos_y"].asFloat();
-			min_detect_limit.x = calib_settings["devices"][i]["min_limit_x"].asFloat();
-			min_detect_limit.y = calib_settings["devices"][i]["min_limit_y"].asFloat();
-			max_detect_limit.x = calib_settings["devices"][i]["max_limit_x"].asFloat();
-			max_detect_limit.y = calib_settings["devices"][i]["max_limit_y"].asFloat();
+			detect_limit.x = calib_settings["devices"][i]["limit_x"].asFloat();
+			detect_limit.y = calib_settings["devices"][i]["limit_y"].asFloat();
 			overlap.x = calib_settings["devices"][i]["overlap_x"].asFloat();
 			overlap.y = calib_settings["devices"][i]["overlap_y"].asFloat();
 		}
@@ -186,8 +168,8 @@ void Capture::enable_device(rs2::device dev)
 	rs2::pipeline_profile profile = p.start(c);
 
 	// Hold it internally
-	_devices.emplace(serial_number, view_port{ {},{}, p, profile, serial_number, pos_val, overlap, min_detect_limit, max_detect_limit });
-	cout << "Device Added : "<< serial_number << endl;
+	_devices.emplace(serial_number, view_port{ {},{}, p, profile, serial_number, pos_val, overlap, detect_limit });
+	cout << "Device Added : " << serial_number << endl;
 
 	initialize();
 }
@@ -297,7 +279,7 @@ inline void Capture::updateColor()
 				// Display in a GUI
 				imshow(color_name.c_str(), color);
 			}
-			
+
 		}
 		device_no++;
 	}
@@ -336,7 +318,7 @@ inline void Capture::updateDepth()
 				cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
 
 				cv::Mat depthClone = depthImage.clone();
-				// ‘ÎÛ‹——£‚Ü‚Å‚Ü‚Å‚Ìƒf[ƒ^‚ð0-255‚É‚·‚é
+				// ï¿½ÎÛ‹ï¿½ï¿½ï¿½ï¿½Ü‚Å‚Ü‚Å‚Ìƒfï¿½[ï¿½^ï¿½ï¿½0-255ï¿½É‚ï¿½ï¿½ï¿½
 				inRange(depthImage, Scalar(high_dist_max), Scalar(high_dist_min), depthImage);
 				depthImage.convertTo(depthImage, CV_8U);
 
@@ -351,76 +333,48 @@ inline void Capture::updateDepth()
 				// DrawMatchesFlags::DRAW_RICH_KEYPOINTS flag ensures the size of the circle corresponds to the size of blob
 				vector<KeyPoint> one_set_of_keypoints;
 				d->detect(depthImage, one_set_of_keypoints);
-
-				vector<KeyPoint> selected_keypoints;
-
-				//cout << "max_detection_limit limit : " << to_string(view.second.max_detection_limit.x) << ", " << to_string(view.second.max_detection_limit.y) << endl;
-				//cout << "min_detection_limit limit : " << to_string(view.second.min_detection_limit.x) << ", " << to_string(view.second.min_detection_limit.y) << endl;
+				drawKeypoints(depthImage, one_set_of_keypoints, depthImage, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 
 				// TODO : apply transformation according to camera position
 				for (int i = 0; i < one_set_of_keypoints.size(); i++) {
 
 					int pos_x = one_set_of_keypoints[i].pt.x; int pos_y = one_set_of_keypoints[i].pt.y;
 
-					if ( !(pos_x > view.second.max_detection_limit.x || pos_y > view.second.max_detection_limit.y || pos_x < view.second.min_detection_limit.x || pos_y < view.second.min_detection_limit.y)) {
+					if (pos_x > view.second.detection_limit.x || pos_y > view.second.detection_limit.y) {
 						continue;
 					}
 
-					selected_keypoints.push_back(one_set_of_keypoints[i]);
-					//cout << "Found point : " << to_string(pos_x) << ", " << to_string(pos_y)<< endl;
+					// positions are already adjusted to the main axes system
+					// x and y for view.second.position are reversed because in the calib file, x denotes row and y denotes column
+					// but in the image coordinates, x is the horizontal direction and y is vertical
 					vector<Point2f> img, dst;
 
 					//ASSUMPTION : image is 1280 x 720
 					double pos_from_center_x = pos_x - 640; double pos_from_center_y = pos_y - 360;
 					double angle_from_center = atan2(pos_from_center_y, pos_from_center_x);
-					double magnitude = sqrt( (pos_from_center_x*pos_from_center_x) + (pos_from_center_y * pos_from_center_y) );
+					double magnitude = sqrt((pos_from_center_x*pos_from_center_x) + (pos_from_center_y * pos_from_center_y));
 					//cout << "maxRadius : " << to_string(maxRadius)<< endl;
-					double adjusted_magnitude = magnitude - ( (magnitude / maxRadius) * (double) adjustment_);
+					double adjusted_magnitude = magnitude - ((magnitude / maxRadius) * (double)adjustment_);
 
 					//cout << "adjusted_magnitude" << to_string(adjusted_magnitude)<< endl;
 
-					int adjusted_x = (int) (adjusted_magnitude * cos(angle_from_center)) + 640;
-					int adjusted_y = (int) (adjusted_magnitude * sin(angle_from_center)) + 360;
+					int adjusted_x = (int)(adjusted_magnitude * cos(angle_from_center)) + 640;
+					int adjusted_y = (int)(adjusted_magnitude * sin(angle_from_center)) + 360;
+					/*	cout << "adjusted_x" << to_string(adjusted_x) <<  endl;
+						cout << "adjusted_y" << to_string(adjusted_y) << endl;*/
 
-					if (positionAdjustByClient == 0) {
-						//x,y in image coordinates is reverse from matrix numbering of position. therefore, view.second.position.y is multiplied against width (x direction) and vice versa.
-						// normalize flag does not make sense here because the x,y values are adjusted (merged) on the sensor side.
-						img.push_back(Point((float)(adjusted_x + (view.second.position.y * 1280) - view.second.overlap.x), (float)(adjusted_y + (view.second.position.x * 720) - view.second.overlap.y)));
-						perspectiveTransform(img, dst, homography);
-					}
-					else {
-						if (normalize) {
-							img.push_back(Point((float)(adjusted_x / 1280), (float)(adjusted_y / 720)));
-						}
-						else {
-							img.push_back(Point((float)(adjusted_x), (float)(adjusted_y)));
-						}
-						dst = img;
-					}
-					cout << "x, y" << dst[0].x << ", " << dst[0].y<< endl;
-					data_to_send.add_x( dst[0].x);
-					data_to_send.add_y( dst[0].y);
-					data_to_send.add_device_number(view.second.device_number);
+					img.push_back(Point((float)(adjusted_x + (view.second.position.y * 1280) - view.second.overlap.x), (float)(adjusted_y + (view.second.position.x * 720) - view.second.overlap.y)));
+					perspectiveTransform(img, dst, homography);
+
+					data_to_send.add_x((int)dst[0].x);
+					data_to_send.add_y((int)dst[0].y);
 					total_data++;
 				}
 
-				CvPoint roi_top_left = view.second.min_detection_limit;
-				CvPoint roi_bottom_right = view.second.max_detection_limit;
-				CvPoint roi_top_right = view.second.min_detection_limit;
-				CvPoint roi_bottom_left = view.second.min_detection_limit;
-				roi_top_right.x += roi_bottom_right.x - roi_top_left.x;
-				roi_bottom_left.y += roi_bottom_right.y - roi_top_left.y;
-
-				
-
-				drawKeypoints(depthImage, selected_keypoints, depthImage, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-				line(depthImage, roi_top_left, roi_top_right, Scalar(0, 255, 0), 1, 8, 0);
-				line(depthImage, roi_top_right, roi_bottom_right, Scalar(0, 255, 0), 1, 8, 0);
-				line(depthImage, roi_bottom_right, roi_bottom_left, Scalar(0, 255, 0), 1, 8, 0);
-				line(depthImage, roi_bottom_left, roi_top_left, Scalar(0, 255, 0), 1, 8, 0);
-
 				// Display in a GUI
-				imshow(depth_name.c_str(), depthImage);
+				if (dleaf_show_detection_window) {
+					imshow(depth_name.c_str(), depthImage);
+				}
 			}
 		}
 		device_no++;
@@ -428,18 +382,18 @@ inline void Capture::updateDepth()
 
 	// Send through socket. data_to_send contains positions from multiple connected devices
 	string newBuf;
-	data_to_send.SerializeToString(&newBuf);
 
-	if (total_data > 0) {
+	if (total_data == 0) {
 		//cout << "ByteSize object : " << to_string(data_to_send.ByteSize()) << endl;
-
-		send_length_to_socket(data_to_send.ByteSize());
-		send_data(newBuf.data(), data_to_send.ByteSize());
-		if (iResult <= 0) {
-			close_socket();
-		}
+		data_to_send.add_x(0);
+		data_to_send.add_y(0);
 	}
-
+	data_to_send.SerializeToString(&newBuf);
+	send_length_to_socket(data_to_send.ByteSize());
+	send_data(newBuf.data(), data_to_send.ByteSize());
+	if (iResult <= 0) {
+		close_socket();
+	}
 
 }
 
@@ -454,7 +408,7 @@ void Capture::mouseCallback(int event, int x, int y, int flags, void* userdata) 
 void Capture::setup_socket() {
 
 	WSADATA wsaData;
-	
+
 	struct addrinfo *result = NULL,
 		*ptr = NULL,
 		hints;
@@ -475,7 +429,7 @@ void Capture::setup_socket() {
 	cout << "connecting to : " << host_name << endl;
 
 	// Resolve the server address and port
-	iResult = getaddrinfo(host_name, "1101", &hints, &result);
+	iResult = getaddrinfo(host_name, port, &hints, &result);
 	if (iResult != 0) {
 		printf("getaddrinfo failed with error: %d\n", iResult);
 		WSACleanup();
@@ -509,7 +463,7 @@ void Capture::setup_socket() {
 	if (ConnectSocket == INVALID_SOCKET) {
 		printf("Unable to connect to server!\n");
 		WSACleanup();
-		
+		throw "Server not found";
 	}
 
 }
@@ -530,9 +484,9 @@ void Capture::send_data(const char * data, int size) {
 
 void Capture::send_length_to_socket(int buf_to_send) {
 	// Variable out of scope ?
-	int buf_copy =  buf_to_send;
+	int buf_copy = buf_to_send;
 	// Send the message to server
-	iResult = send(ConnectSocket, (const char *) &buf_copy, sizeof(int), 0);
+	iResult = send(ConnectSocket, (const char *)&buf_copy, sizeof(int), 0);
 
 	if (iResult <= 0) return;
 
@@ -549,7 +503,7 @@ void Capture::send_length_to_socket(int buf_to_send) {
 bool Capture::receive_length_confirmation() {
 	if (iResult <= 0) return false;
 	int data_echo;
-	iResult = recv(ConnectSocket, (char *) &data_echo, buf_length, 0);
+	iResult = recv(ConnectSocket, (char *)&data_echo, buf_length, 0);
 	if (iResult > 0) {
 		//printf("Bytes received: %d and data echo : %d\n", iResult, (int)data_echo);
 		if (data_echo == buf_length) return true;
@@ -621,5 +575,5 @@ void Capture::calcHomographyMatrix(vector<Point2f> pts_src, vector<Point2f> pts_
 	printf("Calculating homography...\n Please redo clicking if the results are not as expected.\n Matrix will be output as text file.");
 	Mat h = findHomography(pts_src, pts_dest);
 	FileStorage file("homography.xml", 1, "UTF-8");
-	file <<"Homography" << h;
+	file << "Homography" << h;
 }

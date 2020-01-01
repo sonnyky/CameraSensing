@@ -32,12 +32,13 @@ void recognition::destroy_class() {
 	delete this;
 }
 
-void recognition::setup_camera() {
+void recognition::setup_camera(int id) {
 	if (cap.isOpened()) {
+		cap.release();
 		return;
 	}
 	else {
-		cap.open(1);
+		cap.open(id);
 	}
 }
 
@@ -80,5 +81,7 @@ void recognition::get_color_image(unsigned char * data, int &width, int &height)
 }
 
 void recognition::release_camera() {
-	cap.release();
+	if (cap.isOpened()) {
+		cap.release();
+	}
 }

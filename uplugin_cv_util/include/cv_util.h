@@ -29,7 +29,7 @@ public:
 	const char * error_message = "No error";
 	const char * get_error_message();
 	void set_error_message(std::string error);
-	const float * calc_homography(UPoint * src, UPoint * dst, int length);
+	const void calc_homography(UPoint * src, UPoint * dst, int length, float * data);
 	void destroy_class();
 	
 private:

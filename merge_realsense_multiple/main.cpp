@@ -23,6 +23,21 @@ vector<string> parse(string input, string delimiter) {
 	return result;
 }
 
+char* getCmdOption(char ** begin, char ** end, const std::string & option)
+{
+	char ** itr = std::find(begin, end, option);
+	if (itr != end && ++itr != end)
+	{
+		return *itr;
+	}
+	return 0;
+}
+
+bool cmdOptionExists(char** begin, char** end, const std::string& option)
+{
+	return std::find(begin, end, option) != end;
+}
+
 int main(int argc, char* argv[])
 {
 	
@@ -34,7 +49,7 @@ int main(int argc, char* argv[])
 		rs2::context ctx;
 
 		// Capture parameters setup
-		if (argc == 11) {
+		if (argc >= 11) {
 			cout << "Detection mode. Setting up detection parameters..." << endl;
 			capture.set_server_ip(argv[1]);
 			capture.set_detection_params(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), atoi(argv[7]), atoi(argv[8]), atoi(argv[9]));
@@ -50,6 +65,8 @@ int main(int argc, char* argv[])
 			cout << "Detection mode. Server IP is set to local machine. Setting up default parameters..." << endl;
 			capture.set_default_params();
 		}
+
+		capture.set_normalize_flag(cmdOptionExists(argv, argv + argc, "-norm"));
 
 		// Register callback for tracking which devices are currently connected
 		ctx.set_devices_changed_callback([&](rs2::event_information& info)
