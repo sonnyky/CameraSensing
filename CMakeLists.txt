@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project (camera_vision)
+project (camera_sensing)
  
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/build)
  
@@ -16,3 +16,4 @@ add_subdirectory(uplugin_shape)
 add_subdirectory(realsense_multiple)
 add_subdirectory(merge_realsense_multiple)
 add_subdirectory(server_realsense_multiple)
+add_subdirectory(plane_detection)
