@@ -1,5 +1,5 @@
-#ifndef __APP__
-#define __APP__
+#ifndef __PLANE_DETECTION__
+#define __PLANE_DETECTION__
 
 #include <Windows.h>
 #include <comutil.h>

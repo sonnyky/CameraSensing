@@ -1,7 +1,7 @@
 #include <iostream>
 #include <sstream>
 #include <librealsense2/rs.hpp> 
-#include "app.h"
+#include "plane_detection.h"
 
 bool fexists(const std::string& filename) {
 	std::ifstream ifile(filename.c_str());

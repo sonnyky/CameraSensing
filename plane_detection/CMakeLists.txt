@@ -49,7 +49,7 @@ if(CMAKE_VERSION VERSION_LESS "2.8.11")
 endif()
 
 # Declare the executable target built from your sources
-set(SOURCES main.cpp app.cpp ${ADDITIONAL_INCLUDE}/app.h ${ADDITIONAL_INCLUDE}/util.h)
+set(SOURCES main.cpp plane_detection.cpp ${ADDITIONAL_INCLUDE}/plane_detection.h ${ADDITIONAL_INCLUDE}/util.h)
 add_executable(plane_detection ${SOURCES} )
 
 # Link your application with OpenCV libraries
