@@ -1,13 +1,6 @@
-# CameraVision
-画像処理周りのユティリティ系
+# Camera vision related projects
+This is a compilation of various computer vision related projects.
 
-# 内容
-## Unity 座標とカメラ画像のホモグラフィ行列の算出
-### 使い方
-* Unity Scene 内の4点をパラメーターとして渡し、EXE を実行する。
-* パラメーターの順番：左上、右上、左下、右下。
-* 実行したらカメラ映像が表示されるのでマウスクリックで上記の4点に当てはまる点を選択する。
-* 左クリック：左上、Shift+左クリック：右上、右クリック：左下、Shift＋右クリック：右下。
-* クリックは、何度でもやり直せる。
-* 終わったら ’c’ キーを押す。
-* EXE と同じフォルダ内にhomography.xml が生成される。
+# Contents
+## PCL plane detection
+## OpenVINO based human pose detection
