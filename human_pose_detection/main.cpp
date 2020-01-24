@@ -1,4 +1,4 @@
-#include "pose_detector.h"
+#include "pose_detector.hpp"
 
 #include "pose_detector_flags.hpp"
 

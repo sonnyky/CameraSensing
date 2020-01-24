@@ -6,7 +6,7 @@
 #include <vector>
 
 #include <opencv2/imgproc/imgproc.hpp>
-#include "pose_detector.h"
+#include "pose_detector.hpp"
 #include "render_human_pose.hpp"
 
 namespace human_pose_estimation {

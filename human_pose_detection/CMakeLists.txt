@@ -62,7 +62,7 @@ if(CMAKE_VERSION VERSION_LESS "2.8.11")
 endif()
 
 # Declare the executable target built from your sources
-set(SOURCES main.cpp pose_detector.cpp human_pose.cpp peak.cpp render_human_pose.cpp ${ADDITIONAL_INCLUDE}/pose_detector.h ${ADDITIONAL_INCLUDE}/human_pose.hpp ${ADDITIONAL_INCLUDE}/peak.hpp ${ADDITIONAL_INCLUDE}/pose_detector_flags.hpp ${ADDITIONAL_INCLUDE}/render_human_pose.hpp)
+set(SOURCES main.cpp pose_detector.cpp human_pose.cpp peak.cpp render_human_pose.cpp ${ADDITIONAL_INCLUDE}/pose_detector.hpp ${ADDITIONAL_INCLUDE}/human_pose.hpp ${ADDITIONAL_INCLUDE}/peak.hpp ${ADDITIONAL_INCLUDE}/pose_detector_flags.hpp ${ADDITIONAL_INCLUDE}/render_human_pose.hpp)
 add_executable(human_pose_detection ${SOURCES} )
 
 # Link your application with OpenCV libraries
