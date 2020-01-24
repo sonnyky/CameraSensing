@@ -45,6 +45,34 @@ void Capture::finalize() {
 
 }
 
+inline void make_depth_histogram(const Mat &depth, Mat &color_depth) {
+	color_depth = Mat(depth.size(), CV_8UC3);
+	int width = depth.cols, height = depth.rows;
+
+	static uint32_t histogram[0x10000];
+	memset(histogram, 0, sizeof(histogram));
+
+	for (int i = 0; i < height; ++i) {
+		for (int j = 0; j < width; ++j) {
+			++histogram[depth.at<ushort>(i, j)];
+		}
+	}
+
+	for (int i = 2; i < 0x10000; ++i) histogram[i] += histogram[i - 1]; // Build a cumulative histogram for the indices in [1,0xFFFF]
+
+	for (int i = 0; i < height; ++i) {
+		for (int j = 0; j < width; ++j) {
+			if (uint16_t d = depth.at<ushort>(i, j)) {
+				int f = histogram[d] * 255 / histogram[0xFFFF]; // 0-255 based on histogram location
+				color_depth.at<Vec3b>(i, j) = Vec3b(f, 0, 255 - f);
+			}
+			else {
+				color_depth.at<Vec3b>(i, j) = Vec3b(0, 5, 20);
+			}
+		}
+	}
+}
+
 void Capture::run()
 {
 	while (true) {
@@ -223,11 +251,13 @@ inline void Capture::updateDepth()
 				cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
 				cv::Mat depthClone = depthImage.clone();
 
+				make_depth_histogram(depthImage, depthClone);
+
 				cur_pipeline_profile.get_device().get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
 
 
 				// Display in a GUI
-				imshow(depth_name.c_str(), depthImage);
+				imshow(depth_name.c_str(), depthClone);
 			}
 		}
 		device_no++;
