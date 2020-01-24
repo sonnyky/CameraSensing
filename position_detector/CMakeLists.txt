@@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 2.8)
 
 # Define project name
 project(position_detector)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(Boost_DEBUG 1)
 # Find OpenCV, you may need to set OpenCV_DIR variable
 # to the absolute path to the directory containing OpenCVConfig.cmake file
@@ -37,6 +41,10 @@ set(RealsenseSDK_ROOT "D:/Workspace/librealsense")
 set(RealsenseSDK_INCLUDE ${RealsenseSDK_ROOT}/include) #currently hardcoding for Release x64
 set(RealsenseSDK_LIB "D:/Libraries/realsense_sdk_x64/Release/realsense2.lib")
 
+# Realsense capture
+set(REALSENSE_CAPTURE_DIR "D:/Workspace/CameraSensing/realsense_multiple")
+set(REALSENSE_CAPTURE_INCLUDE "D:/Workspace/CameraSensing/realsense_multiple/include")
+
 # Set installation folder
 set (CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "default install path" FORCE )
 
@@ -47,6 +55,7 @@ include_directories(${ADDITIONAL_INCLUDE})
 include_directories(${RealsenseSDK_INCLUDE})
 include_directories(${INFERENCE_ENGINE_INCLUDE})
 include_directories(${GFLAGS_INCLUDE})
+include_directories(${REALSENSE_CAPTURE_INCLUDE})
 
 # Set directories of plane detector library
 set (PLANE_DETECTOR "D:/Workspace/CameraSensing/plane_detection")
@@ -82,12 +91,14 @@ set(SOURCES
 	${HUMAN_POSE_DETECTOR}/peak.cpp
 	${HUMAN_POSE_DETECTOR}/render_human_pose.cpp
 	${PLANE_DETECTOR}/include/plane_detection.h 
-	${PLANE_DETECTOR}/plane_detection.cpp 
+	${PLANE_DETECTOR}/plane_detection.cpp
+	${REALSENSE_CAPTURE_DIR}/app.cpp
 	${ADDITIONAL_INCLUDE}/position_detector.h 
 	${HUMAN_POSE_DETECTOR_INCLUDE}/pose_detector.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/human_pose.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/peak.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/render_human_pose.hpp
+	${REALSENSE_CAPTURE_INCLUDE}/app.h
 	)
 
 add_executable(position_detector ${SOURCES} )

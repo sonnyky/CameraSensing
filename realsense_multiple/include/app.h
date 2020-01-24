@@ -6,9 +6,6 @@
 #include <iostream>
 #include <cstdio>
 #include <ctime>
-
-#include<optional>
-
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -57,7 +54,7 @@ public:
 	void Capture::remove_devices(const rs2::event_information& info);
 
 	size_t Capture::device_count();
-	optional<vector<Mat>> get_color_images();
+	vector<Mat> get_color_images();
 
 private :
 	void initialize();

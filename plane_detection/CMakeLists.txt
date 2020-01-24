@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 2.8)
 
 # Define project name
 project(plane_detection)
+
 set(Boost_DEBUG 1)
 # Find OpenCV, you may need to set OpenCV_DIR variable
 # to the absolute path to the directory containing OpenCVConfig.cmake file

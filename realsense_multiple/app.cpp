@@ -136,7 +136,7 @@ size_t Capture::device_count()
 	return _devices.size();
 }
 
-optional<vector<Mat>> Capture::get_color_images()
+vector<Mat> Capture::get_color_images()
 {
 	vector<Mat> color_images;
 	poll_frames();
@@ -145,7 +145,7 @@ optional<vector<Mat>> Capture::get_color_images()
 	if (total_number_of_streams == 0)
 	{
 		cout << "No streams available" << endl;
-		return nullopt;
+		return color_images;
 	}
 
 	std::lock_guard<std::mutex> lock(_mutex);

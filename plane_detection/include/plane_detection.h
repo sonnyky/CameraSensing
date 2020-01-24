@@ -1,6 +1,9 @@
 #ifndef __PLANE_DETECTION__
 #define __PLANE_DETECTION__
 
+#define BOOST_CONFIG_SUPPRESS_OUTDATED_MESSAGE
+#define _HAS_AUTO_PTR_ETC 1
+
 #include <Windows.h>
 #include <comutil.h>
 #include <iostream>
