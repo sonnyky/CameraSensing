@@ -39,48 +39,6 @@ void Capture::initialize() {
 		cvNamedWindow(color_name.c_str(), CV_WINDOW_AUTOSIZE);
 		cvNamedWindow(depth_name.c_str(), CV_WINDOW_AUTOSIZE);
 	}
-
-	params.filterByInertia = false;
-	params.filterByConvexity = false;
-	params.filterByArea = true;
-	params.filterByColor = true;
-	params.blobColor = 255;
-
-	cout << "current minArea : " << to_string(params.minArea) << endl;
-	cout << "current low_dist_min : " << to_string(low_dist_min) << endl;
-	cout << "current low_dist_max : " << to_string(low_dist_max) << endl;
-	cout << "current high_dist_min : " << to_string(high_dist_min) << endl;
-	cout << "current high_dist_max : " << to_string(high_dist_max) << endl;
-
-	d = SimpleBlobDetector::create(params);
-	element = getStructuringElement(cv::MORPH_CROSS,
-		cv::Size(2 * erosion_size + 1, 2 * erosion_size + 1),
-		cv::Point(erosion_size, erosion_size));
-	
-}
-
-void Capture::set_detection_params(int lowDistMin, int lowDistMax, int highDistMin, int highDistMax, int minBlobArea, int maxBlobArea, int erosionSize) {
-	params.minArea = minBlobArea;
-
-	low_dist_min = lowDistMin;
-	low_dist_max = lowDistMax;
-	high_dist_min = highDistMin;
-	high_dist_max = highDistMax;
-	
-	params.maxArea = maxBlobArea;
-	erosion_size = erosionSize;
-}
-
-void Capture::set_default_params() {
-
-	low_dist_min = 1800;
-	low_dist_max = 1600;
-	high_dist_min = 1200;
-	high_dist_max = 1000;
-
-	params.minArea = 500;
-	params.maxArea = 10000;
-	erosion_size = 6;
 }
 
 void Capture::finalize() {
@@ -91,12 +49,7 @@ void Capture::run()
 {
 	while (true) {
 		update();
-		if (waitKey(1) == 99) {
-			vector<Point2f> pts_src, pts_dest;
-			pts_src.push_back(topLeftImage); pts_src.push_back(topRightImage); pts_src.push_back(bottomRightImage); pts_src.push_back(bottomLeftImage);
-			pts_dest.push_back(topLeft); pts_dest.push_back(topRight); pts_dest.push_back(bottomRight); pts_dest.push_back(bottomLeft);
-			calcHomographyMatrix(pts_src, pts_dest);
-		}else if(waitKey(1) == 113) break;
+		if(waitKey(1) == 113) break;
 
 	}
 }
@@ -232,9 +185,10 @@ inline void Capture::updateColor()
 				string depth_name = ss_depth_name.append(to_string(device_no));
 				// Creating OpenCV Matrix from a color image
 				Mat color(Size(640, 480), CV_8UC3, (void*)id_to_frame.second.get_data(), Mat::AUTO_STEP);
-				cvtColor(color, color, COLOR_BGR2RGB);
+				Mat colorReversed;
+				cvtColor(color, colorReversed, COLOR_BGR2RGB);
 				// Display in a GUI
-				imshow(color_name.c_str(), color);
+				imshow(color_name.c_str(), colorReversed);
 			}
 			
 		}
@@ -268,30 +222,7 @@ inline void Capture::updateDepth()
 
 				cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
 				cv::Mat depthClone = depthImage.clone();
-				// ‘ÎÛ‹——£‚Ü‚Å‚Ü‚Å‚Ìƒf[ƒ^‚ð0-255‚É‚·‚é
-				inRange(depthImage, Scalar(high_dist_max), Scalar(high_dist_min), depthImage);
-				depthImage.convertTo(depthImage, CV_8U);
 
-				inRange(depthClone, Scalar(low_dist_max), Scalar(low_dist_min), depthClone);
-				depthClone.convertTo(depthClone, CV_8U);
-
-				bitwise_or(depthImage, depthClone, depthImage);
-
-				//Refine input image with dilation and erosion
-
-				//erode(depthImage, depthImage, element);  
-				dilate(depthImage, depthImage,element);
-				// Draw detected blobs as red circles.
-				// DrawMatchesFlags::DRAW_RICH_KEYPOINTS flag ensures the size of the circle corresponds to the size of blob
-				keypoints.clear();
-				d->detect(depthImage, keypoints);
-				//cout <<"detected : " << to_string( keypoints.size()) << endl;
-				drawKeypoints(depthImage, keypoints, depthImage, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-
-
-				// TODO : Append to a global list of detected blobs. need mutex ?
-				// TODO : get the current pipeline device info
-				// TODO : apply transformation according to camera position
 				cur_pipeline_profile.get_device().get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
 
 
@@ -302,69 +233,4 @@ inline void Capture::updateDepth()
 		device_no++;
 	}
 
-}
-
-void Capture::mouseCallback(int event, int x, int y, int flags, void* userdata) {
-	if (event == cv::EVENT_LBUTTONDOWN || event == cv::EVENT_RBUTTONDOWN)
-	{
-		Capture* self = static_cast<Capture*>(userdata);
-		self->doMouseCallback(event, x, y, flags);
-	}
-}
-
-void Capture::doMouseCallback(int event, int x, int y, int flags) {
-	if (flags == (cv::EVENT_FLAG_LBUTTON))
-	{
-		std::cout << "Left mouse clicked at : " << x << ", " << y << std::endl;
-		topLeftImage.x = x;
-		topLeftImage.y = y;
-	}
-
-	if (flags == (cv::EVENT_FLAG_LBUTTON + cv::EVENT_FLAG_SHIFTKEY))
-	{
-		std::cout << "Shift+Left clicked at : " << x << ", " << y << std::endl;
-		topRightImage.x = x;
-		topRightImage.y = y;
-	}
-
-	if (flags == (cv::EVENT_FLAG_RBUTTON))
-	{
-		std::cout << "Right mouse clicked at : " << x << ", " << y << std::endl;
-		bottomLeftImage.x = x;
-		bottomLeftImage.y = y;
-	}
-
-	if (flags == (cv::EVENT_FLAG_RBUTTON + cv::EVENT_FLAG_SHIFTKEY))
-	{
-
-		std::cout << "Shift+Right clicked at : " << x << ", " << y << std::endl;
-		bottomRightImage.x = x;
-		bottomRightImage.y = y;
-	}
-}
-
-void Capture::setRangePoints(int topLeftX, int topLeftY, int topRightX, int topRightY, int bottomLeftX, int bottomLeftY, int bottomRightX, int bottomRightY) {
-	topLeft.x = topLeftX;
-	topLeft.y = topLeftY;
-	topRight.x = topRightX;
-	topRight.y = topRightY;
-	bottomLeft.x = bottomLeftX;
-	bottomLeft.y = bottomLeftY;
-	bottomRight.x = bottomRightX;
-	bottomRight.y = bottomRightY;
-	printf("Top left x : %f\n", topLeft.x);
-	printf("Top left y : %f\n", topLeft.y);
-	printf("Top right x : %f\n", topRight.x);
-	printf("Top right y : %f\n", topRight.y);
-	printf("Bottom left x : %f\n", bottomLeft.x);
-	printf("Bottom left y : %f\n", bottomLeft.y);
-	printf("Bottom right x : %f\n", bottomRight.x);
-	printf("Bottom right y : %f\n", bottomRight.y);
-}
-
-void Capture::calcHomographyMatrix(vector<Point2f> pts_src, vector<Point2f> pts_dest) {
-	printf("Calculating homography...\n Please redo clicking if the results are not as expected.\n Matrix will be output as text file.");
-	Mat h = findHomography(pts_src, pts_dest);
-	FileStorage file("homography.xml", 1, "UTF-8");
-	file <<"Homography" << h;
 }

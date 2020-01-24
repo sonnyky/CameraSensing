@@ -7,14 +7,6 @@
 #include <cstdio>
 #include <ctime>
 
-#include <wtypes.h>
-#include <comdef.h> 
-#include <string>
-#include <string.h>
-#include <tchar.h>
-#include <stdio.h>
-#include "atlbase.h"
-#include "atlwin.h"
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -48,22 +40,8 @@ private :
 	// Active distance threshold
 	int low_dist_min, low_dist_max, high_dist_min, high_dist_max;
 
-	// Blob detection
-	SimpleBlobDetector::Params params;
-	Ptr<SimpleBlobDetector> d;
-	std::vector<KeyPoint> keypoints;
-	std::vector<Vec2i> people_pos;
-
-	// Variables to compute homography
-	Point2f topLeft, topRight, bottomLeft, bottomRight;
-	Point2f topLeftImage, topRightImage, bottomLeftImage, bottomRightImage;
-
 	std::mutex _mutex;
 	std::map<std::string, view_port> _devices;
-
-	// Variables to erode and dilate image to improve detection
-	int erosion_size;
-	Mat element;
 
 public:
 	// Constructor
@@ -73,18 +51,10 @@ public:
 	~Capture();
 	void run();
 
-	// Calibration functions
-	void calcHomographyMatrix(vector<Point2f> pts_src, vector<Point2f> pts_dest);
-	void setRangePoints(int topLeftX, int topLeftY, int topRightX, int topRightY, int bottomLeftX, int bottomLeftY, int bottomRightX, int bottomRightY);
-
 	void Capture::enable_device(rs2::device dev);
 	void Capture::remove_devices(const rs2::event_information& info);
 
 	size_t Capture::device_count();
-
-	// Setting capture and image processing parameters
-	void set_detection_params(int lowDistMin, int lowDistMax, int highDistMin, int highDistMax, int minBlobArea, int maxBlobArea, int erosionSize);
-	void set_default_params();
 
 private :
 	void initialize();
@@ -96,10 +66,6 @@ private :
 	void update();
 	inline void updateColor();
 	inline void updateDepth();
-
-	// Input functions
-	static void mouseCallback(int event, int x, int y, int flags, void* userdata);
-	inline void doMouseCallback(int event, int x, int y, int flags);
 };
 
 #endif // __APP__
