@@ -4,6 +4,9 @@ cmake_minimum_required(VERSION 2.8)
 # Define project name
 project(realsense_multiple)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # Find OpenCV, you may need to set OpenCV_DIR variable
 # to the absolute path to the directory containing OpenCVConfig.cmake file
 # via the command line or GUI

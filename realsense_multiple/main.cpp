@@ -39,6 +39,16 @@ int main(int argc, char* argv[])
 
 		// Start capturing and blob detection
 		capture.run();
+
+
+		// Test get one color image after application ended
+		auto list_of_images = capture.get_color_images();
+		if (list_of_images) {
+			for (int i = 0; i < list_of_images.value().size(); i++) {
+				string fileName = "image" + to_string(i) + ".jpg";
+				imwrite(fileName, list_of_images.value()[i]);
+			}
+		}
 	}
 	catch (std::exception& ex) {
 		std::cout << ex.what() << std::endl;

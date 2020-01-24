@@ -136,6 +136,46 @@ size_t Capture::device_count()
 	return _devices.size();
 }
 
+optional<vector<Mat>> Capture::get_color_images()
+{
+	vector<Mat> color_images;
+	poll_frames();
+	auto total_number_of_streams = stream_count();
+
+	if (total_number_of_streams == 0)
+	{
+		cout << "No streams available" << endl;
+		return nullopt;
+	}
+
+	std::lock_guard<std::mutex> lock(_mutex);
+	int device_no = 0;
+	for (auto&& view : _devices)
+	{
+		string ss_color_name = "Color";
+
+		// For each device get its pipeline
+		for (auto&& id_to_frame : view.second.color_frame)
+		{
+			// If the frame is available
+			if (id_to_frame.second)
+			{
+				string color_name = ss_color_name.append(to_string(device_no));
+
+				// Creating OpenCV Matrix from a color image
+				Mat color(Size(640, 480), CV_8UC3, (void*)id_to_frame.second.get_data(), Mat::AUTO_STEP);
+				Mat colorReversed;
+				cvtColor(color, colorReversed, COLOR_BGR2RGB);
+
+				color_images.push_back(colorReversed);
+			}
+		}
+		device_no++;
+	}
+
+	return color_images;
+}
+
 int Capture::stream_count()
 {
 	//std::lock_guard<std::mutex> lock(_mutex);
