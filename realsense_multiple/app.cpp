@@ -4,9 +4,6 @@
 #include <chrono>
 
 #include <numeric>
-#include <opencv2/opencv.hpp>
-#include <opencv2/highgui.hpp>
-#include <librealsense2/rs.hpp> 
 
 const std::string no_camera_message = "No camera connected, please connect 1 or more";
 const std::string platform_camera_name = "Platform Camera";
@@ -45,34 +42,6 @@ void Capture::finalize() {
 
 }
 
-inline void make_depth_histogram(const Mat &depth, Mat &color_depth) {
-	color_depth = Mat(depth.size(), CV_8UC3);
-	int width = depth.cols, height = depth.rows;
-
-	static uint32_t histogram[0x10000];
-	memset(histogram, 0, sizeof(histogram));
-
-	for (int i = 0; i < height; ++i) {
-		for (int j = 0; j < width; ++j) {
-			++histogram[depth.at<ushort>(i, j)];
-		}
-	}
-
-	for (int i = 2; i < 0x10000; ++i) histogram[i] += histogram[i - 1]; // Build a cumulative histogram for the indices in [1,0xFFFF]
-
-	for (int i = 0; i < height; ++i) {
-		for (int j = 0; j < width; ++j) {
-			if (uint16_t d = depth.at<ushort>(i, j)) {
-				int f = histogram[d] * 255 / histogram[0xFFFF]; // 0-255 based on histogram location
-				color_depth.at<Vec3b>(i, j) = Vec3b(f, 0, 255 - f);
-			}
-			else {
-				color_depth.at<Vec3b>(i, j) = Vec3b(0, 5, 20);
-			}
-		}
-	}
-}
-
 void Capture::run()
 {
 	while (true) {
@@ -97,6 +66,7 @@ void Capture::enable_device(rs2::device dev)
 	{
 		return;
 	}
+
 	// Create a pipeline from the given device
 	rs2::pipeline p;
 	rs2::config c;
@@ -104,6 +74,12 @@ void Capture::enable_device(rs2::device dev)
 
 	// Start the pipeline with the configuration
 	rs2::pipeline_profile profile = p.start(c);
+
+	auto depthSensor = profile.get_device().query_sensors()[0];
+	if (depthSensor.get_option(rs2_option::RS2_OPTION_VISUAL_PRESET)) {
+
+		depthSensor.set_option(rs2_option::RS2_OPTION_VISUAL_PRESET, RS2_RS400_VISUAL_PRESET_HIGH_DENSITY);
+	}
 
 	// Hold it internally
 	_devices.emplace(serial_number, view_port{ {},{}, p, profile, serial_number });
@@ -281,23 +257,22 @@ inline void Capture::updateDepth()
 			// If the frame is available
 			if (id_to_frame.second)
 			{
+
+				rs2::frame depth = id_to_frame.second.apply_filter(color_map);
+
 				string depth_name = ss_depth_name.append(to_string(device_no));
 				pipeline_profile cur_pipeline_profile = view.second.profile;
 
 				// Query frame size (width and height)
-				const int w = id_to_frame.second.as<rs2::video_frame>().get_width();
-				const int h = id_to_frame.second.as<rs2::video_frame>().get_height();
+				const int w = depth.as<rs2::video_frame>().get_width();
+				const int h = depth.as<rs2::video_frame>().get_height();
 
-				cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
-				cv::Mat depthClone = depthImage.clone();
-
-				make_depth_histogram(depthImage, depthClone);
+				cv::Mat depthImage (h, w, CV_8UC3, (char*)depth.get_data(), Mat::AUTO_STEP);
 
 				cur_pipeline_profile.get_device().get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
 
-
 				// Display in a GUI
-				imshow(depth_name.c_str(), depthClone);
+				imshow(depth_name.c_str(), depthImage);
 			}
 		}
 		device_no++;

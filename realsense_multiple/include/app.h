@@ -1,6 +1,8 @@
 #ifndef __APP__
 #define __APP__
 
+#pragma once
+
 #include <Windows.h>
 #include <comutil.h>
 #include <iostream>
@@ -13,7 +15,10 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/aruco.hpp>
 #include <vector>
-#include <librealsense2/rs.hpp> 
+
+#include <librealsense2/rs.hpp>
+#include <librealsense2/rs_advanced_mode.hpp>
+
 #include<mutex>
 #include <wrl/client.h>
 using namespace Microsoft::WRL;
