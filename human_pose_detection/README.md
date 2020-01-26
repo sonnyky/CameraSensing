@@ -18,5 +18,5 @@ You can download this file using the utility tool provided at <openvino install 
 * -i flag to determine the target device. The options are CPU, GPU or other device/processors. Refer to Intel documentation.
 A sample run command will be as follows:
 ```
-human_pose_detection.exe -m "<path to the xml file directory>\human-pose-detection-0001.xml" -i cpu
+human_pose_detection.exe -m "<path to the xml file directory>\human-pose-estimation-0001.xml" -i cpu
 ```
