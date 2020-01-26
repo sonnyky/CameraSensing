@@ -13,8 +13,9 @@ using namespace rs2;
 
 
 // Constructor
-Capture::Capture()
+Capture::Capture():align_to_color(RS2_STREAM_COLOR)
 {
+	
 }
 
 // Destructor
@@ -26,16 +27,7 @@ Capture::~Capture()
 
 void Capture::initialize() {
 
-	// OpenCV windows for displaying camera streams
-	for (int i = 0; i < device_count(); i++) {
-		string ss_color, ss_depth;
-		ss_color = "Color";
-		ss_depth = "Depth";
-		string color_name = ss_color.append(to_string(i));
-		string depth_name = ss_depth.append(to_string(i));
-		cvNamedWindow(color_name.c_str(), CV_WINDOW_AUTOSIZE);
-		cvNamedWindow(depth_name.c_str(), CV_WINDOW_AUTOSIZE);
-	}
+	
 }
 
 void Capture::finalize() {
@@ -152,6 +144,53 @@ vector<Mat> Capture::get_color_images()
 	return color_images;
 }
 
+vector<Mat> Capture::get_depth_data() {
+
+	vector<Mat> depth_data;
+
+	poll_frames();
+	auto total_number_of_streams = stream_count();
+	if (total_number_of_streams == 0)
+	{
+		cout << "No streams available" << endl;
+		return depth_data;
+	}
+
+	std::lock_guard<std::mutex> lock(_mutex);
+
+	int device_no = 0;
+
+	for (auto&& view : _devices)
+	{
+		string ss_depth_name = "Depth";
+
+		// For each device get its pipeline
+		for (auto&& id_to_frame : view.second.depth_frame)
+		{
+			// If the frame is available
+			if (id_to_frame.second)
+			{
+				string depth_name = ss_depth_name.append(to_string(device_no));
+				pipeline_profile cur_pipeline_profile = view.second.profile;
+
+				// Query frame size (width and height)
+				const int w = id_to_frame.second.as<rs2::video_frame>().get_width();
+				const int h = id_to_frame.second.as<rs2::video_frame>().get_height();
+
+				cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)id_to_frame.second.get_data());
+				depth_data.push_back(depthImage);
+			}
+		}
+		device_no++;
+	}
+	return depth_data;
+}
+
+void Capture::set_alignment(int a)
+{
+	alignment = a;
+}
+
 int Capture::stream_count()
 {
 	//std::lock_guard<std::mutex> lock(_mutex);
@@ -199,8 +238,12 @@ void Capture::poll_frames()
 	{
 		// Ask each pipeline if there are new frames available
 		rs2::frameset frameset;
+
 		if (view.second.pipe.poll_for_frames(&frameset))
 		{
+			if (alignment == 1) {
+				frameset = align_to_color.process(frameset);
+			}
 			rs2::frame new_color_frame = frameset.get_color_frame();
 			rs2::frame new_depth_frame = frameset.get_depth_frame();
 			int stream_id = new_depth_frame.get_profile().unique_id();

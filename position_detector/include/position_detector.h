@@ -1,4 +1,5 @@
 #include "plane_detection.h"
+#include "pose_detector.hpp"
 
 class PositionDetector {
 

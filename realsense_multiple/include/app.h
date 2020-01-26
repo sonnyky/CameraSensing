@@ -60,6 +60,9 @@ public:
 
 	size_t Capture::device_count();
 	vector<Mat> get_color_images();
+	vector<Mat> get_depth_data();
+
+	void set_alignment(int a);
 
 private :
 	void initialize();
@@ -71,6 +74,10 @@ private :
 	void update();
 	inline void updateColor();
 	inline void updateDepth();
+
+	int alignment = 0;
+	rs2::align align_to_color;
+
 };
 
 #endif // __APP__
