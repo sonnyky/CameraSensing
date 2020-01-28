@@ -266,6 +266,28 @@ float Capture::get_distance_at_pixel(int x, int y, depth_frame depth_data_frame)
 	return depth_data_frame.get_distance(x, y);
 }
 
+vector<rs2_intrinsics> Capture::get_cameras_intrinsics()
+{
+	vector<rs2_intrinsics> intrinsics;
+	poll_frames();
+	auto total_number_of_streams = stream_count();
+	if (total_number_of_streams == 0)
+	{
+		cout << "No streams available" << endl;
+		return intrinsics;
+	}
+	std::lock_guard<std::mutex> lock(_mutex);
+
+	for (auto&& view : _devices)
+	{
+		pipeline p = view.second.pipe;
+		auto const i = p.get_active_profile().get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
+		intrinsics.push_back(i);
+	}
+
+	return intrinsics;
+}
+
 void Capture::set_alignment(int a)
 {
 	alignment = a;

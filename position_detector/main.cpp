@@ -74,6 +74,8 @@ int main(int argc, char* argv[])
 			
 			auto list_of_framesets = capture.get_depth_and_color_frameset();
 
+			vector<rs2_intrinsics> intrinsics = capture.get_cameras_intrinsics();
+
 			if (list_of_framesets.size() > 0) {
 				int size = list_of_framesets.size();
 				for (int i = 0; i < size; i++) {
@@ -96,10 +98,20 @@ int main(int argc, char* argv[])
 						// test draw on the nose node
 						circle(list_of_framesets[i].color_image, cvPoint(pose.keypoints[0].x, pose.keypoints[0].y), 20, Scalar(255, 255, 255), CV_FILLED, 8, 0);
 
-						// get the node distance from the corresponding depth image.
+						// get the node 3d position from camera.
 						float distance = capture.get_distance_at_pixel(pose.keypoints[0].x, pose.keypoints[0].y, (depth_frame) list_of_framesets[i].depth_frame);
-						cv::putText(list_of_framesets[i].color_image, to_string(distance), cv::Point(16, 32),
-							cv::FONT_HERSHEY_COMPLEX, 0.8, cv::Scalar(0, 0, 255));
+
+						float point3d[3];
+
+						const float pixel[2] = { pose.keypoints[0].x , pose.keypoints[0].y};
+						const rs2_intrinsics * camera_intrinsics = &intrinsics[0];
+					
+						rs2_deproject_pixel_to_point(point3d, camera_intrinsics, pixel, distance);
+
+						string log_position = to_string(point3d[0]) + ", " + to_string(point3d[1]) + ", " + to_string(point3d[2]);
+
+						cv::putText(list_of_framesets[i].color_image, log_position, cv::Point(16, 32),
+							cv::FONT_HERSHEY_COMPLEX, 0.8, cv::Scalar(255, 255, 255));
 					}
 
 					

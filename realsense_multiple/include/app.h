@@ -18,6 +18,7 @@
 
 #include <librealsense2/rs.hpp>
 #include <librealsense2/rs_advanced_mode.hpp>
+#include <librealsense2/rsutil.h>
 
 #include<mutex>
 #include <wrl/client.h>
@@ -78,6 +79,8 @@ public:
 
 	float get_distance_at_pixel(int x, int y, depth_frame depth_data_frame);
 
+	vector<rs2_intrinsics> get_cameras_intrinsics();
+
 	void set_alignment(int a);
 
 private :
@@ -93,7 +96,6 @@ private :
 
 	int alignment = 0;
 	rs2::align align_to_color;
-
 };
 
 #endif // __APP__
