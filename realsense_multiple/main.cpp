@@ -42,13 +42,13 @@ int main(int argc, char* argv[])
 
 
 		// Test get one color image after application ended
-		auto list_of_images = capture.get_color_images();
+		/*auto list_of_images = capture.get_color_images();
 		if (list_of_images.size() > 0) {
 			for (int i = 0; i < list_of_images.size(); i++) {
 				string fileName = "image" + to_string(i) + ".jpg";
 				imwrite(fileName, list_of_images[i]);
 			}
-		}
+		}*/
 	}
 	catch (std::exception& ex) {
 		std::cout << ex.what() << std::endl;

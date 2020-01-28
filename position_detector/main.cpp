@@ -69,11 +69,19 @@ int main(int argc, char* argv[])
 
 		while (1) {
 			if (waitKey(1) == 113) break;
+
+			// Retrieve color images from realsense cameras
 			auto list_of_color_images = capture.get_color_images();
+			
+			// Retrieve depth images from realsense cameras
+			auto list_of_depth_images = capture.get_depth_data();
+
 			if (list_of_color_images.size() > 0) {
 				int size = list_of_color_images.size();
 				for (int i = 0; i < size; i++) {
 					double t1 = static_cast<double>(cv::getTickCount());
+
+					// Get pose estimates
 					std::vector<human_pose_estimation::HumanPose> poses = estimator.estimate(list_of_color_images[i]);
 					double t2 = static_cast<double>(cv::getTickCount());
 					if (inferenceTime == 0) {
@@ -82,17 +90,21 @@ int main(int argc, char* argv[])
 					else {
 						inferenceTime = inferenceTime * 0.95 + 0.05 * (t2 - t1) / cv::getTickFrequency() * 1000;
 					}
-					if (FLAGS_r) {
-						for (human_pose_estimation::HumanPose const& pose : poses) {
-							std::stringstream rawPose;
-							rawPose << std::fixed << std::setprecision(0);
-							for (auto const& keypoint : pose.keypoints) {
-								rawPose << keypoint.x << "," << keypoint.y << " ";
-							}
-							rawPose << pose.score;
-							std::cout << rawPose.str() << std::endl;
-						}
+
+					// Rendering to the image
+					human_pose_estimation::renderHumanPose(poses, list_of_color_images[i]);
+
+					for (human_pose_estimation::HumanPose const& pose : poses) {
+						// test draw on the nose node
+						circle(list_of_color_images[i], cvPoint(pose.keypoints[0].x, pose.keypoints[0].y), 20, Scalar(255, 255, 255), CV_FILLED, 8, 0);
+
+						// get the node distance from the corresponding depth image.
+						vector<float> distances = capture.get_distance_at_pixel(pose.keypoints[0].x, pose.keypoints[0].y);
+						cv::putText(list_of_color_images[i], to_string(distances[0]), cv::Point(16, 32),
+							cv::FONT_HERSHEY_COMPLEX, 0.8, cv::Scalar(0, 0, 255));
 					}
+
+					
 					imshow(to_string(i), list_of_color_images[i]);
 				}
 			}

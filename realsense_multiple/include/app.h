@@ -61,6 +61,7 @@ public:
 	size_t Capture::device_count();
 	vector<Mat> get_color_images();
 	vector<Mat> get_depth_data();
+	vector<float> get_distance_at_pixel(int x, int y);
 
 	void set_alignment(int a);
 

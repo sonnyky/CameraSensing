@@ -186,6 +186,41 @@ vector<Mat> Capture::get_depth_data() {
 	return depth_data;
 }
 
+vector<float> Capture::get_distance_at_pixel(int x, int y)
+{
+
+	vector<float> distances;
+
+	poll_frames();
+	auto total_number_of_streams = stream_count();
+	if (total_number_of_streams == 0)
+	{
+		cout << "No streams available" << endl;
+		return distances;
+	}
+
+	std::lock_guard<std::mutex> lock(_mutex);
+
+	int device_no = 0;
+	for (auto&& view : _devices)
+	{
+		string ss_depth_name = "Depth";
+
+		// For each device get its pipeline
+		for (auto&& id_to_frame : view.second.depth_frame)
+		{
+			// If the frame is available
+			if (id_to_frame.second)
+			{
+				float dist = ((rs2::depth_frame)id_to_frame.second).get_distance(x, y);
+				distances.push_back(dist);
+			}
+		}
+		device_no++;
+	}
+	return distances;
+}
+
 void Capture::set_alignment(int a)
 {
 	alignment = a;
@@ -245,7 +280,7 @@ void Capture::poll_frames()
 				frameset = align_to_color.process(frameset);
 			}
 			rs2::frame new_color_frame = frameset.get_color_frame();
-			rs2::frame new_depth_frame = frameset.get_depth_frame();
+			rs2::depth_frame new_depth_frame = frameset.get_depth_frame();
 			int stream_id = new_depth_frame.get_profile().unique_id();
 			view.second.color_frame[stream_id] = new_color_frame; //update color view port with the new stream
 			view.second.depth_frame[stream_id] = new_depth_frame; //update depth view port with the new stream

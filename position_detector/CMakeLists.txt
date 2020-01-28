@@ -92,6 +92,7 @@ set(SOURCES
 	${REALSENSE_CAPTURE_DIR}/app.cpp
 	${ADDITIONAL_INCLUDE}/position_detector.h 
 	${HUMAN_POSE_DETECTOR_INCLUDE}/pose_detector.hpp
+	${HUMAN_POSE_DETECTOR_INCLUDE}/pose_detector_flags.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/human_pose.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/peak.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/render_human_pose.hpp
