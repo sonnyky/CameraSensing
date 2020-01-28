@@ -28,6 +28,7 @@ using namespace rs2;
 
 
 class Capture {
+	
 	struct view_port
 	{
 		std::map<int, rs2::frame> color_frame;
@@ -36,6 +37,14 @@ class Capture {
 		rs2::pipeline_profile profile;
 		string device_number;
 	};
+
+	struct single_frame 
+	{
+		Mat color_image;
+		rs2::frame depth_frame;
+	};
+
+
 private :
 	rs2::config cfg;
 	rs2::frameset frames;
@@ -61,7 +70,13 @@ public:
 	size_t Capture::device_count();
 	vector<Mat> get_color_images();
 	vector<Mat> get_depth_data();
-	vector<float> get_distance_at_pixel(int x, int y);
+
+	vector<single_frame> get_depth_and_color_frameset();
+
+	// gets distance of a pixel in all connected cameras
+	vector<float> get_all_distances_at_pixel(int x, int y);
+
+	float get_distance_at_pixel(int x, int y, depth_frame depth_data_frame);
 
 	void set_alignment(int a);
 

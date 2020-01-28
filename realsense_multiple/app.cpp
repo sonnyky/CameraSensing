@@ -186,7 +186,47 @@ vector<Mat> Capture::get_depth_data() {
 	return depth_data;
 }
 
-vector<float> Capture::get_distance_at_pixel(int x, int y)
+vector<Capture::single_frame> Capture::get_depth_and_color_frameset()
+{
+
+	vector<single_frame> frame_dataset;
+	poll_frames();
+	auto total_number_of_streams = stream_count();
+	if (total_number_of_streams == 0)
+	{
+		cout << "No streams available" << endl;
+		return frame_dataset;
+	}
+
+	std::lock_guard<std::mutex> lock(_mutex);
+
+	int device_no = 0;
+	for (auto&& view : _devices)
+	{
+		// For each device get its depth frame
+		for (auto&& id_to_frame : view.second.depth_frame)
+		{
+			// If the frame is available
+			if (id_to_frame.second)
+			{
+				// Assume color image is present
+				auto color_frame = view.second.color_frame;
+
+				// Creating OpenCV Matrix from a color image, using the id of the depth image
+				Mat color(Size(640, 480), CV_8UC3, (void*)color_frame[id_to_frame.first].get_data(), Mat::AUTO_STEP);
+
+				// Create a new struct object to store the depth and color images
+				single_frame frame = {color, id_to_frame.second};
+				frame_dataset.push_back(frame);
+			}
+		}
+
+		device_no++;
+	}
+	return frame_dataset;
+}
+
+vector<float> Capture::get_all_distances_at_pixel(int x, int y)
 {
 
 	vector<float> distances;
@@ -219,6 +259,11 @@ vector<float> Capture::get_distance_at_pixel(int x, int y)
 		device_no++;
 	}
 	return distances;
+}
+
+float Capture::get_distance_at_pixel(int x, int y, depth_frame depth_data_frame)
+{
+	return depth_data_frame.get_distance(x, y);
 }
 
 void Capture::set_alignment(int a)
