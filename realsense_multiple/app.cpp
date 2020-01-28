@@ -266,6 +266,9 @@ float Capture::get_distance_at_pixel(int x, int y, depth_frame depth_data_frame)
 	return depth_data_frame.get_distance(x, y);
 }
 
+/*
+Observe that we are using the color camera's intrinsics
+*/
 vector<rs2_intrinsics> Capture::get_cameras_intrinsics()
 {
 	vector<rs2_intrinsics> intrinsics;
@@ -281,7 +284,7 @@ vector<rs2_intrinsics> Capture::get_cameras_intrinsics()
 	for (auto&& view : _devices)
 	{
 		pipeline p = view.second.pipe;
-		auto const i = p.get_active_profile().get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
+		auto const i = p.get_active_profile().get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
 		intrinsics.push_back(i);
 	}
 
