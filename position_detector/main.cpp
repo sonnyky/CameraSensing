@@ -1,8 +1,11 @@
 #include <iostream>
 #include <sstream>
 #include <librealsense2/rs.hpp> 
-#include "position_detector.h"
+#include "plane_detection.h"
+#include "pose_detector.hpp"
+#include "render_human_pose.hpp"
 #include "app.h"
+
 
 #include "pose_detector_flags.hpp"
 

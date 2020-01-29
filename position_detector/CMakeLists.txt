@@ -82,7 +82,6 @@ endif()
 # Declare the executable target built from your sources
 set(SOURCES 
 	main.cpp
-	position_detector.cpp
 	${HUMAN_POSE_DETECTOR}/pose_detector.cpp
 	${HUMAN_POSE_DETECTOR}/human_pose.cpp
 	${HUMAN_POSE_DETECTOR}/peak.cpp
@@ -90,7 +89,6 @@ set(SOURCES
 	${PLANE_DETECTOR}/include/plane_detection.h 
 	${PLANE_DETECTOR}/plane_detection.cpp
 	${REALSENSE_CAPTURE_DIR}/app.cpp
-	${ADDITIONAL_INCLUDE}/position_detector.h 
 	${HUMAN_POSE_DETECTOR_INCLUDE}/pose_detector.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/pose_detector_flags.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/human_pose.hpp
