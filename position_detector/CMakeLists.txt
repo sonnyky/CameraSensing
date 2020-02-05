@@ -64,6 +64,7 @@ set (HUMAN_POSE_DETECTOR_INCLUDE "D:/Workspace/CameraSensing/human_pose_detectio
 
 include_directories(${PLANE_DETECTOR_INCLUDE})
 include_directories(${HUMAN_POSE_DETECTOR_INCLUDE})
+include_directories(${ADDITIONAL_INCLUDE})
 
 # If the package has been found, several variables will
 # be set, you can find the full list with descriptions
@@ -82,6 +83,7 @@ endif()
 # Declare the executable target built from your sources
 set(SOURCES 
 	main.cpp
+	position_detector.cpp
 	${HUMAN_POSE_DETECTOR}/pose_detector.cpp
 	${HUMAN_POSE_DETECTOR}/human_pose.cpp
 	${HUMAN_POSE_DETECTOR}/peak.cpp
@@ -94,6 +96,7 @@ set(SOURCES
 	${HUMAN_POSE_DETECTOR_INCLUDE}/human_pose.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/peak.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/render_human_pose.hpp
+	${ADDITIONAL_INCLUDE}/position_detector.hpp
 	${REALSENSE_CAPTURE_INCLUDE}/app.h
 	)
 
