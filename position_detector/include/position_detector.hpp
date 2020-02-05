@@ -11,6 +11,10 @@ public :
 	position_detector();
 	~position_detector();
 
+
+
 private:
 
 };
+
+#endif
