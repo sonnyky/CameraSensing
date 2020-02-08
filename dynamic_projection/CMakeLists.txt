@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 # Define project name
-project(position_detector)
+project(dynamic_projection)
 
 set(Boost_DEBUG 1)
 # Find OpenCV, you may need to set OpenCV_DIR variable
@@ -83,8 +83,9 @@ endif()
 # Declare the executable target built from your sources
 set(SOURCES 
 	main.cpp
-	position_detector.cpp
 	utilities.cpp
+	dynamic_projection.cpp
+	state.cpp
 	${HUMAN_POSE_DETECTOR}/pose_detector.cpp
 	${HUMAN_POSE_DETECTOR}/human_pose.cpp
 	${HUMAN_POSE_DETECTOR}/peak.cpp
@@ -97,12 +98,13 @@ set(SOURCES
 	${HUMAN_POSE_DETECTOR_INCLUDE}/human_pose.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/peak.hpp
 	${HUMAN_POSE_DETECTOR_INCLUDE}/render_human_pose.hpp
-	${ADDITIONAL_INCLUDE}/position_detector.hpp
+	${ADDITIONAL_INCLUDE}/dynamic_projection.hpp
+	${ADDITIONAL_INCLUDE}/state.hpp
 	${ADDITIONAL_INCLUDE}/utilities.hpp
 	${REALSENSE_CAPTURE_INCLUDE}/app.h
 	)
 
-add_executable(position_detector ${SOURCES} )
+add_executable(dynamic_projection ${SOURCES} )
 
 # Link your application with OpenCV libraries
-target_link_libraries(position_detector ${OpenCV_LIBS} ${RealsenseSDK_LIB} ${PCL_LIBRARIES} ${GFLAGS_LIB} ${INFERENCE_ENGINE_LIB} ${INFERENCE_ENGINE_TBBMALLOC_LIB} ${INFERENCE_ENGINE_TBB_LIB} shlwapi.lib)
+target_link_libraries(dynamic_projection ${OpenCV_LIBS} ${RealsenseSDK_LIB} ${PCL_LIBRARIES} ${GFLAGS_LIB} ${INFERENCE_ENGINE_LIB} ${INFERENCE_ENGINE_TBBMALLOC_LIB} ${INFERENCE_ENGINE_TBB_LIB} shlwapi.lib)
