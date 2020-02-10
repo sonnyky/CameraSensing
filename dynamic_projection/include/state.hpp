@@ -1,8 +1,8 @@
 #include <iostream>
 #include <vector>
-
+#include <variant>
+#include <optional>
 #include <tuple>
-#include <boost/any.hpp>
 
 template <typename... states>
 class state_machine {
@@ -11,45 +11,30 @@ public :
 	template<typename state_type>
 	void transition_to()
 	{
-		current_state = &std::get<state_type>(states);
+		current_state = &std::get<state_type>(possible_states);
 	}
 
-	// Update is executed every frame
-	template<typename update_type>
-	update_type update();
-
-	template <typename event>
-	void handle(const event& event)
+	template <typename Event>
+	void handle(const Event& event)
 	{
-		auto passEventToState = [&event](auto statePtr) {
-			statePtr->state_handler(event);
+		auto passEventToState = [this, &event](auto statePtr) {
+			statePtr->state_handler(event).execute(*this);
 		};
-		std::visit(passEventToState, currentState);
+		std::visit(passEventToState, current_state);
 	}
-	
-	template <typename state_type>
-	struct TransitionTo
-	{
-		template <typename Machine>
-		void execute(Machine& machine)
-		{
-			machine.template transition_to<state_type>();
-		}
-	};
 
 private:
-	std::tuple<states...> states;
-	boost::any current_state{ &std::get<0>(states)};
-
+	std::tuple<states...> possible_states;
+	std::variant<states*...> current_state{ &std::get<0>(possible_states) };
 };
 
-template <typename State>
+template <typename state_type>
 struct TransitionTo
 {
 	template <typename Machine>
 	void execute(Machine& machine)
 	{
-		machine.template transitionTo<State>();
+		machine.template transition_to<state_type>();
 	}
 };
 
@@ -61,7 +46,7 @@ struct Nothing
 	}
 };
 
-struct OpenEvent
+struct DoorOpenEvent
 {
 };
 
@@ -74,7 +59,7 @@ struct OpenState;
 
 struct ClosedState
 {
-	TransitionTo<OpenState> state_handler(const OpenEvent&) const
+	TransitionTo<OpenState> state_handler(const DoorOpenEvent&) const
 	{
 		std::cout << "Opening the door..." << std::endl;
 		return {};
@@ -89,7 +74,7 @@ struct ClosedState
 
 struct OpenState
 {
-	Nothing state_handler(const OpenEvent&) const
+	Nothing state_handler(const DoorOpenEvent&) const
 	{
 		std::cout << "Cannot open. The door is already open!" << std::endl;
 		return {};
@@ -101,3 +86,6 @@ struct OpenState
 		return {};
 	}
 };
+
+using Door = state_machine<ClosedState, OpenState>;
+
