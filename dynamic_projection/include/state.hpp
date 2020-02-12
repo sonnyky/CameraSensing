@@ -23,6 +23,12 @@ public :
 		std::visit(passEventToState, current_state);
 	}
 
+	template<typename... states>
+	auto get_current_state()
+	{
+		return current_state;
+	}
+
 private:
 	std::tuple<states...> possible_states;
 	std::variant<states*...> current_state{ &std::get<0>(possible_states) };
@@ -46,46 +52,46 @@ struct Nothing
 	}
 };
 
-struct DoorOpenEvent
+struct StartCalibrationEvent
 {
 };
 
-struct CloseEvent
+struct StartTrackingEvent
 {
 };
 
-struct ClosedState;
-struct OpenState;
+struct TrackingState;
+struct CalibrationState;
 
-struct ClosedState
+struct TrackingState
 {
-	TransitionTo<OpenState> state_handler(const DoorOpenEvent&) const
+	TransitionTo<CalibrationState> state_handler(const StartCalibrationEvent&) const
 	{
 		std::cout << "Opening the door..." << std::endl;
 		return {};
 	}
 
-	Nothing state_handler(const CloseEvent&) const
+	Nothing state_handler(const StartTrackingEvent&) const
 	{
 		std::cout << "Cannot close. The door is already closed!" << std::endl;
 		return {};
 	}
 };
 
-struct OpenState
+struct CalibrationState
 {
-	Nothing state_handler(const DoorOpenEvent&) const
+	Nothing state_handler(const StartCalibrationEvent&) const
 	{
 		std::cout << "Cannot open. The door is already open!" << std::endl;
 		return {};
 	}
 
-	TransitionTo<ClosedState> state_handler(const CloseEvent&) const
+	TransitionTo<TrackingState> state_handler(const StartTrackingEvent&) const
 	{
 		std::cout << "Closing the door..." << std::endl;
 		return {};
 	}
 };
 
-using Door = state_machine<ClosedState, OpenState>;
+using CaptureStateManager = state_machine<TrackingState, CalibrationState>;
 

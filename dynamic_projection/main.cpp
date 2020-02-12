@@ -33,12 +33,26 @@ int main(int argc, char* argv[])
 			return EXIT_SUCCESS;
 		}
 
-		Door door;
+		CaptureStateManager capture_state;
 
-		door.handle(DoorOpenEvent{});
-		door.handle(CloseEvent{});
-		door.handle(CloseEvent{});
-		door.handle(DoorOpenEvent{});
+		struct Visitor
+		{
+			void operator()(TrackingState *  t)
+			{
+				cout<< " in tracking state "<< endl;
+			}
+			void operator()(CalibrationState * c)
+			{
+				cout << " in calibration state " << endl;
+			}
+		};
+
+		//using state_variants = ;
+		std::variant<TrackingState * , CalibrationState * > v = capture_state.get_current_state<std::variant<TrackingState, CalibrationState>>();
+
+		std::visit(Visitor{}, v);
+
+		
 //
 //
 //#pragma region capture_initializations
