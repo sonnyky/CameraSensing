@@ -27,7 +27,10 @@ bool ParseAndCheckCommandLine(int argc, char* argv[]) {
 
 int main(int argc, char* argv[])
 {
-	
+	int TRACKING_MODE = 0;
+	int CALIBRATION_MODE = 1;
+	int MODE = 0;
+
 	try {
 		if (!ParseAndCheckCommandLine(argc, argv)) {
 			return EXIT_SUCCESS;
@@ -88,17 +91,17 @@ int main(int argc, char* argv[])
 
 #pragma region opencv window
 		int width_first = 1920;
-		int height_first = 1080;
+		int height_first = 0;
 
 		// define dimension of the second display
-		int width_second = 640;
-		int height_second = 480;
+		int width_second = 1280;
+		int height_second = 960;
 
 		// move the window to the second display 
 		// (assuming the two displays are top aligned)
-		namedWindow("My Window", CV_WINDOW_AUTOSIZE);
-		/*moveWindow("My Window", width_first, height_first);
-		setWindowProperty("My Window", CV_WND_PROP_FULLSCREEN, CV_WINDOW_FULLSCREEN);*/
+		cvNamedWindow("My Window", CV_WINDOW_AUTOSIZE);
+		moveWindow("My Window", width_first, height_first);
+		cvSetWindowProperty("My Window", WND_PROP_AUTOSIZE, WINDOW_AUTOSIZE);
 
 		// create target image
 		Mat img = Mat(Size(width_second, height_second), CV_8UC1);
@@ -130,14 +133,17 @@ int main(int argc, char* argv[])
 					Mat view = list_of_framesets[i].color_image;
 			
 					// Draw circles on screen
-					for (int i = 0; i < circles.size(); i++) {
-						circle(view, circles[i], radius, CvScalar(255, 255, 255), 3, 8, 0);
+					if (MODE == TRACKING_MODE) {
+						for (int i = 0; i < circles.size(); i++) {
+							circle(view, circles[i], radius, CvScalar(255, 255, 255), -1, 8, 0);
+						}
 					}
-
 					// Detect circles projected by the projector
+					
 
 					// show image
-					imshow("My Window", view);
+					resize(view, img, CvSize(width_second, height_second));
+					imshow("My Window", img);
 
 				}
 			}
