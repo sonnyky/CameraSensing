@@ -61,11 +61,17 @@ set(SOURCES
 	utilities.cpp
 	dynamic_projection.cpp
 	state.cpp
+	camera_calibration.cpp
+	projector_calibration.cpp
+	calibration.cpp
 	${REALSENSE_CAPTURE_DIR}/app.cpp
 	${ADDITIONAL_INCLUDE}/dynamic_projection.hpp
 	${ADDITIONAL_INCLUDE}/state.hpp
 	${ADDITIONAL_INCLUDE}/utilities.hpp
 	${ADDITIONAL_INCLUDE}/flags.hpp
+	${ADDITIONAL_INCLUDE}/camera_calibration.hpp
+	${ADDITIONAL_INCLUDE}/projector_calibration.hpp
+	${ADDITIONAL_INCLUDE}/calibration.hpp
 	${REALSENSE_CAPTURE_INCLUDE}/app.h
 	)
 
