@@ -121,7 +121,7 @@ int main(int argc, char* argv[])
 				circles.push_back(point);
 			}
 		}
-		calibration
+		Tinker::calibration calibration_manager;
 #pragma endregion
 #pragma region Capture and processing loop
 		while (1) {
