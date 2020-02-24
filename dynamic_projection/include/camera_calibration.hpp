@@ -2,12 +2,24 @@
 
 #include <iostream>
 #include <vector>
-#include <opencv2/opencv.hpp>
-#include <opencv2/core.hpp>
+#include "opencv2/core.hpp"
+#include "opencv2/core/utility.hpp"
+#include "opencv2/imgproc.hpp"
+#include "opencv2/calib3d.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/videoio.hpp"
+#include "opencv2/highgui.hpp"
+
+#include <cctype>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+
+using namespace std;
+using namespace cv;
 
 namespace Tinker {
-	using namespace std;
-	using namespace cv;
+	
 
 	enum { DETECTION = 0, CAPTURING = 1, CALIBRATED = 2 };
 	enum Pattern { CHESSBOARD, CIRCLES_GRID, ASYMMETRIC_CIRCLES_GRID };
@@ -19,9 +31,42 @@ namespace Tinker {
 		camera_calibration();
 		~camera_calibration();
 
-		
+		void setup_parameters(
+			Size boardSize_, 
+			Size imageSize_, 
+			float squareSize_, 
+			float aspectRatio_,
+			int nFrames_,
+			int delay_,
+			int mode_,
+			bool writePoints_,
+			bool writeExtrinsics_,
+			int cameraId_,
+			string outputFileName_);
 
 	private:
+
+		Size boardSize, imageSize;
+		float squareSize, aspectRatio;
+		Mat cameraMatrix, distCoeffs;
+		string outputFilename;
+
+		int i, nframes;
+		bool writeExtrinsics, writePoints;
+		bool undistortImage = false;
+		int flags = 0;
+
+		bool flipVertical;
+		bool showUndistorted;
+		bool videofile;
+		int delay;
+		clock_t prevTimestamp = 0;
+		int mode = DETECTION;
+		int cameraId = 0;
+		vector<vector<Point2f> > imagePoints;
+		vector<string> imageList;
+		Pattern pattern = CHESSBOARD;
+
 		static double computeReprojectionErrors(
 			const vector<vector<Point3f> >& objectPoints,
 			const vector<vector<Point2f> >& imagePoints,
@@ -51,15 +96,11 @@ namespace Tinker {
 			const vector<Point3f>& newObjPoints,
 			double totalAvgErr);
 
-		static bool readStringList(const string& filename, vector<string>& l);
-
 		static bool runAndSave(const string& outputFilename,
 			const vector<vector<Point2f> >& imagePoints,
 			Size imageSize, Size boardSize, Pattern patternType, float squareSize,
 			float grid_width, bool release_object,
 			float aspectRatio, int flags, Mat& cameraMatrix,
 			Mat& distCoeffs, bool writeExtrinsics, bool writePoints, bool writeGrid);
-
-
 	};
 }

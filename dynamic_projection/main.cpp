@@ -4,6 +4,7 @@
 #include <state.hpp>
 #include <flags.hpp>
 #include "app.h"
+#include "calibration.hpp"
 
 bool fexists(const std::string& filename) {
 	std::ifstream ifile(filename.c_str());
@@ -36,6 +37,7 @@ int main(int argc, char* argv[])
 			return EXIT_SUCCESS;
 		}
 
+#pragma region states initializations
 		CaptureStateManager capture_state;
 
 		struct Visitor
@@ -53,8 +55,7 @@ int main(int argc, char* argv[])
 		std::variant<TrackingState * , CalibrationState * > v = capture_state.get_current_state<std::variant<TrackingState, CalibrationState>>();
 		std::visit(Visitor{}, v);
 
-		cout << " capture " << endl;
-
+#pragma endregion
 #pragma region capture_initializations
 		Capture capture;
 		rs2::context ctx;
@@ -107,7 +108,7 @@ int main(int argc, char* argv[])
 		Mat detectionResized = Mat(Size(width_second, height_second), CV_8UC1);
 		Mat projectionResized = Mat(Size(width_second, height_second), CV_8UC1);
 #pragma endregion
-
+#pragma region calibration parameters settings and calibration object instantiation
 		// create circular calibration pattern
 		int radius = 25;
 		int distance = 70;
@@ -120,10 +121,20 @@ int main(int argc, char* argv[])
 				circles.push_back(point);
 			}
 		}
+		calibration
+#pragma endregion
 #pragma region Capture and processing loop
 		while (1) {
-			if (waitKey(1) == 113) break;
-			
+
+			// Command keys
+			if (waitKey(1) == 113) {
+				break;
+			}
+			else if (waitKey(1) == 99) {
+				MODE = CALIBRATION_MODE;
+				cout << "going to calibration mode..." << endl;
+			}
+
 			auto list_of_framesets = capture.get_depth_and_color_frameset();
 
 			if (list_of_framesets.size() > 0) {
@@ -134,40 +145,61 @@ int main(int argc, char* argv[])
 					Mat view = list_of_framesets[i].color_image;
 					cv::cvtColor(view, view, CV_BGR2RGB);
 
+					// For projecting circles to the real world
 					Mat circlesDisplay(cvSize(view.cols, view.rows), CV_8UC3, Scalar(0));
-			
-					// Draw circles on screen
 					if (MODE == TRACKING_MODE) {
 						for (int i = 0; i < circles.size(); i++) {
 							circle(circlesDisplay, circles[i], radius, CvScalar(255, 255, 255), -1, 8, 0);
 						}
 					}
 					
-					// Detect circles projected by the projector
 #pragma region circle detection
 					Mat gray;
 					cvtColor(view, gray, COLOR_BGR2GRAY);
 					medianBlur(gray, gray, 5);
 
-					vector<Vec3f> circles;
-					HoughCircles(gray, circles, HOUGH_GRADIENT, 1,
-						gray.rows / 64,  // change this value to detect circles with different distances to each other
-						100, 30, 1, 30 // change the last two parameters
-				   // (min_radius & max_radius) to detect larger circles
-					);
-#pragma endregion
-#pragma region Display result
-					// Draw found circles on image
-					for (size_t i = 0; i < circles.size(); i++)
-					{
-						Vec3i c = circles[i];
-						Point center = Point(c[0], c[1]);
-						// circle center
-						circle(view, center, 1, Scalar(0, 100, 100), 2, LINE_AA);
-						// circle outline
-						int radius = c[2];
-						circle(view, center, radius, Scalar(255, 0, 255), 2, LINE_AA);
+					if (MODE == TRACKING_MODE) {
+						vector<Vec3f> circles;
+						HoughCircles(gray, circles, HOUGH_GRADIENT, 1,
+							gray.rows / 64,  // change this value to detect circles with different distances to each other
+							100, 30, 1, 30 // change the last two parameters
+					   // (min_radius & max_radius) to detect larger circles
+						);
+						// Draw found circles on image
+						for (size_t i = 0; i < circles.size(); i++)
+						{
+							Vec3i c = circles[i];
+							Point center = Point(c[0], c[1]);
+							// circle center
+							circle(view, center, 1, Scalar(0, 100, 100), 2, LINE_AA);
+							// circle outline
+							int radius = c[2];
+							circle(view, center, radius, Scalar(255, 0, 255), 2, LINE_AA);
+						}
 					}
+#pragma endregion
+
+#pragma region Calibration
+					bool found;
+					switch (pattern)
+					{
+					case CHESSBOARD:
+						found = findChessboardCorners(view, boardSize, pointbuf,
+							CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+						break;
+					case CIRCLES_GRID:
+						found = findCirclesGrid(view, boardSize, pointbuf);
+						break;
+					case ASYMMETRIC_CIRCLES_GRID:
+						found = findCirclesGrid(view, boardSize, pointbuf, CALIB_CB_ASYMMETRIC_GRID);
+						break;
+					default:
+						return fprintf(stderr, "Unknown pattern type\n"), -1;
+					}
+#pragma endregion
+
+#pragma region Display result
+					
 
 					// Get 3D coordinates of projected circles in camera coordinate system.
 

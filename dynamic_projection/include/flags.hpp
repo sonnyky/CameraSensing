@@ -37,14 +37,11 @@ DEFINE_string(pt, "chessboard", video_message);
 DEFINE_uint64(n, 10, help_message);
 DEFINE_uint64(d, 1000, help_message);
 DEFINE_uint64(s, 1, help_message);
-DEFINE_string(pt, "camera_params.xml", video_message);
+DEFINE_string(o, "camera_params.xml", video_message);
 DEFINE_bool(op, false, help_message);
 DEFINE_bool(oe, true, help_message);
-DEFINE_bool(oo, false, help_message);
-DEFINE_uint64(calib_flag, 8, help_message);
+DEFINE_uint64(zt, 8, help_message);
 DEFINE_bool(su, true, help_message);
-DEFINE_uint64(ws, 11, help_message);
-DEFINE_double(dt, 1200.0, help_message);
 
 
 /**	
