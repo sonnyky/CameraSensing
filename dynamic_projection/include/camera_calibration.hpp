@@ -33,7 +33,8 @@ namespace Tinker {
 
 		void setup_parameters(
 			Size boardSize_, 
-			Size imageSize_, 
+			Size imageSize_,
+			string pattern_,
 			float squareSize_, 
 			float aspectRatio_,
 			int nFrames_,
@@ -43,6 +44,8 @@ namespace Tinker {
 			bool writeExtrinsics_,
 			int cameraId_,
 			string outputFileName_);
+
+		void calibrate(Mat image_);
 
 	private:
 
@@ -65,7 +68,11 @@ namespace Tinker {
 		int cameraId = 0;
 		vector<vector<Point2f> > imagePoints;
 		vector<string> imageList;
-		Pattern pattern = CHESSBOARD;
+		String pattern = "chessboard";
+
+		vector<Point2f> pointbuf;
+		bool found;
+		clock_t previous_timestamp = 0;
 
 		static double computeReprojectionErrors(
 			const vector<vector<Point3f> >& objectPoints,
@@ -79,11 +86,9 @@ namespace Tinker {
 		static bool runCalibration(vector<vector<Point2f> > imagePoints,
 			Size imageSize, Size boardSize, Pattern patternType,
 			float squareSize, float aspectRatio,
-			float grid_width, bool release_object,
 			int flags, Mat& cameraMatrix, Mat& distCoeffs,
 			vector<Mat>& rvecs, vector<Mat>& tvecs,
 			vector<float>& reprojErrs,
-			vector<Point3f>& newObjPoints,
 			double& totalAvgErr);
 
 		static void saveCameraParams(const string& filename,
@@ -93,14 +98,12 @@ namespace Tinker {
 			const vector<Mat>& rvecs, const vector<Mat>& tvecs,
 			const vector<float>& reprojErrs,
 			const vector<vector<Point2f> >& imagePoints,
-			const vector<Point3f>& newObjPoints,
 			double totalAvgErr);
 
 		static bool runAndSave(const string& outputFilename,
 			const vector<vector<Point2f> >& imagePoints,
 			Size imageSize, Size boardSize, Pattern patternType, float squareSize,
-			float grid_width, bool release_object,
 			float aspectRatio, int flags, Mat& cameraMatrix,
-			Mat& distCoeffs, bool writeExtrinsics, bool writePoints, bool writeGrid);
+			Mat& distCoeffs, bool writeExtrinsics, bool writePoints);
 	};
 }

@@ -122,18 +122,12 @@ int main(int argc, char* argv[])
 			}
 		}
 		Tinker::calibration calibration_manager;
+
+		calibration_manager.setup_camera_calibration_parameters(cvSize(FLAGS_w, FLAGS_h), cvSize(1280, 960), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
+
 #pragma endregion
 #pragma region Capture and processing loop
 		while (1) {
-
-			// Command keys
-			if (waitKey(1) == 113) {
-				break;
-			}
-			else if (waitKey(1) == 99) {
-				MODE = CALIBRATION_MODE;
-				cout << "going to calibration mode..." << endl;
-			}
 
 			auto list_of_framesets = capture.get_depth_and_color_frameset();
 
@@ -180,24 +174,18 @@ int main(int argc, char* argv[])
 #pragma endregion
 
 #pragma region Calibration
-					bool found;
-					switch (pattern)
-					{
-					case CHESSBOARD:
-						found = findChessboardCorners(view, boardSize, pointbuf,
-							CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+					
+#pragma endregion
+#pragma region command keys
+					// Command keys
+					if (waitKey(1) == 113) {
 						break;
-					case CIRCLES_GRID:
-						found = findCirclesGrid(view, boardSize, pointbuf);
-						break;
-					case ASYMMETRIC_CIRCLES_GRID:
-						found = findCirclesGrid(view, boardSize, pointbuf, CALIB_CB_ASYMMETRIC_GRID);
-						break;
-					default:
-						return fprintf(stderr, "Unknown pattern type\n"), -1;
+					}
+					else if (waitKey(1) == 99) {
+						MODE = CALIBRATION_MODE;
+						cout << "going to calibration mode..." << endl;
 					}
 #pragma endregion
-
 #pragma region Display result
 					
 
@@ -222,6 +210,7 @@ int main(int argc, char* argv[])
 					imshow("My Window", detectionResized);
 					imshow("ProjectionWindow", projectionResized);
 #pragma endregion
+
 				}
 			}
 

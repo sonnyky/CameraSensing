@@ -9,6 +9,7 @@ namespace Tinker {
 		void setup_camera_calibration_parameters(
 			Size boardSize_,
 			Size imageSize_,
+			string pattern_,
 			float squareSize_,
 			float aspectRatio_,
 			int nFrames_,

@@ -8,10 +8,11 @@ Tinker::camera_calibration::~camera_calibration()
 {
 }
 
-void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, std::string outputFileName_)
+void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, std::string outputFileName_)
 {
 	boardSize = boardSize_;
 	imageSize = imageSize_;
+	pattern = pattern_;
 	squareSize_ = squareSize_;
 	aspectRatio = aspectRatio_;
 	nframes = nFrames_;
@@ -21,6 +22,64 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	writeExtrinsics = writeExtrinsics_;
 	cameraId = cameraId_;
 	outputFilename = outputFileName_;
+}
+
+void Tinker::camera_calibration::calibrate(Mat image_)
+{
+
+	Mat viewGray;
+
+	Pattern calibPattern = CHESSBOARD;
+	if (pattern == "circles_grid") {
+		calibPattern = CIRCLES_GRID;
+	}
+	else if (pattern == "asymmetric_circles_grid") {
+		calibPattern = ASYMMETRIC_CIRCLES_GRID;
+	}
+
+	switch (calibPattern)
+	{
+	case CHESSBOARD:
+		found = findChessboardCorners(image_, boardSize, pointbuf,
+			CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+		break;
+	case CIRCLES_GRID:
+		found = findCirclesGrid(image_, boardSize, pointbuf);
+		break;
+	case ASYMMETRIC_CIRCLES_GRID:
+		found = findCirclesGrid(image_, boardSize, pointbuf, CALIB_CB_ASYMMETRIC_GRID);
+		break;
+	default:
+		break;
+	}
+
+	cvtColor(image_, viewGray, COLOR_BGR2GRAY);
+	// improve the found corners' coordinate accuracy
+	if (calibPattern == CHESSBOARD && found) cornerSubPix(viewGray, pointbuf, Size(11, 11),
+		Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+
+	if (mode == CAPTURING && found && (clock() - prevTimestamp > delay*1e-3*CLOCKS_PER_SEC))
+	{
+		imagePoints.push_back(pointbuf);
+		prevTimestamp = clock();
+		//blink = capture.isOpened();
+	}
+
+	if (found)
+		drawChessboardCorners(image_, boardSize, Mat(pointbuf), found);
+
+	if (mode == CAPTURING && imagePoints.size() >= (unsigned)nframes)
+	{
+		if (runAndSave(outputFilename, imagePoints, imageSize,
+			boardSize, calibPattern, squareSize, aspectRatio,
+			flags, cameraMatrix, distCoeffs,
+			writeExtrinsics, writePoints))
+			mode = CALIBRATED;
+		else
+			mode = DETECTION;
+		
+	}
+
 }
 
 
@@ -72,7 +131,7 @@ void Tinker::camera_calibration::calcChessboardCorners(Size boardSize, float squ
 	}
 }
 
-bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, float grid_width, bool release_object, int flags, Mat & cameraMatrix, Mat & distCoeffs, vector<Mat>& rvecs, vector<Mat>& tvecs, vector<float>& reprojErrs, vector<Point3f>& newObjPoints, double & totalAvgErr)
+bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, int flags, Mat & cameraMatrix, Mat & distCoeffs, vector<Mat>& rvecs, vector<Mat>& tvecs, vector<float>& reprojErrs, double & totalAvgErr)
 {
 	cameraMatrix = Mat::eye(3, 3, CV_64F);
 	if (flags & CALIB_FIX_ASPECT_RATIO)
@@ -98,7 +157,7 @@ bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoi
 	return ok;
 }
 
-void Tinker::camera_calibration::saveCameraParams(const string & filename, Size imageSize, Size boardSize, float squareSize, float aspectRatio, int flags, const Mat & cameraMatrix, const Mat & distCoeffs, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const vector<float>& reprojErrs, const vector<vector<Point2f>>& imagePoints, const vector<Point3f>& newObjPoints, double totalAvgErr)
+void Tinker::camera_calibration::saveCameraParams(const string & filename, Size imageSize, Size boardSize, float squareSize, float aspectRatio, int flags, const Mat & cameraMatrix, const Mat & distCoeffs, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const vector<float>& reprojErrs, const vector<vector<Point2f>>& imagePoints, double totalAvgErr)
 {
 	FileStorage fs(filename, FileStorage::WRITE);
 
@@ -172,17 +231,16 @@ void Tinker::camera_calibration::saveCameraParams(const string & filename, Size 
 	}
 }
 
-bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const vector<vector<Point2f>>& imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float grid_width, bool release_object, float aspectRatio, int flags, Mat & cameraMatrix, Mat & distCoeffs, bool writeExtrinsics, bool writePoints, bool writeGrid)
+bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const vector<vector<Point2f>>& imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, int flags, Mat & cameraMatrix, Mat & distCoeffs, bool writeExtrinsics, bool writePoints)
 {
 	vector<Mat> rvecs, tvecs;
 	vector<float> reprojErrs;
 	double totalAvgErr = 0;
-	vector<Point3f> newObjPoints;
 
 	bool ok = runCalibration(imagePoints, imageSize, boardSize, patternType, squareSize,
-		aspectRatio, grid_width, release_object, flags, cameraMatrix, distCoeffs,
-		rvecs, tvecs, reprojErrs, newObjPoints, totalAvgErr);
-	printf("%s. avg reprojection error = %.7f\n",
+		aspectRatio, flags, cameraMatrix, distCoeffs,
+		rvecs, tvecs, reprojErrs, totalAvgErr);
+	printf("%s. avg reprojection error = %.2f\n",
 		ok ? "Calibration succeeded" : "Calibration failed",
 		totalAvgErr);
 
@@ -194,9 +252,6 @@ bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const
 			writeExtrinsics ? tvecs : vector<Mat>(),
 			writeExtrinsics ? reprojErrs : vector<float>(),
 			writePoints ? imagePoints : vector<vector<Point2f> >(),
-			writeGrid ? newObjPoints : vector<Point3f>(),
 			totalAvgErr);
 	return ok;
 }
-
-
