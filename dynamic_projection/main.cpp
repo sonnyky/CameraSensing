@@ -88,6 +88,18 @@ int main(int argc, char* argv[])
 		vector<rs2_intrinsics> intrinsics = capture.get_cameras_intrinsics();
 		const rs2_intrinsics * camera_intrinsics = &intrinsics[0];
 
+		cout << "intrinsics from realsense camera..." << endl;
+		auto principal_point = std::make_pair(camera_intrinsics->ppx, camera_intrinsics->ppy);
+		auto focal_length = std::make_pair(camera_intrinsics->fx, camera_intrinsics->fy);
+		rs2_distortion model = camera_intrinsics->model;
+
+		std::cout << "Principal Point         : " << principal_point.first << ", " << principal_point.second << std::endl;
+		std::cout << "Focal Length            : " << focal_length.first << ", " << focal_length.second << std::endl;
+		std::cout << "Distortion Model        : " << model << std::endl;
+		std::cout << "Distortion Coefficients : [" << camera_intrinsics->coeffs[0] << "," << camera_intrinsics->coeffs[1] << "," <<
+			camera_intrinsics->coeffs[2] << "," << camera_intrinsics->coeffs[3] << "," << camera_intrinsics->coeffs[4] << "]" << std::endl;
+
+
 #pragma endregion Here we initialize capture parameters and enable devices
 
 #pragma region opencv window
@@ -123,11 +135,12 @@ int main(int argc, char* argv[])
 		}
 		Tinker::calibration calibration_manager;
 
-		calibration_manager.setup_camera_calibration_parameters(cvSize(FLAGS_w, FLAGS_h), cvSize(1280, 960), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
+		calibration_manager.setup_camera_calibration_parameters(cvSize(FLAGS_w, FLAGS_height), cvSize(640, 480), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
 
 #pragma endregion
 #pragma region Capture and processing loop
-		while (1) {
+		int processing = 1;
+		do {
 
 			auto list_of_framesets = capture.get_depth_and_color_frameset();
 
@@ -137,6 +150,7 @@ int main(int argc, char* argv[])
 				for (int i = 0; i < size; i++) {
 					vector<Point2f> pointBuf;
 					Mat view = list_of_framesets[i].color_image;
+					//cout << "image size : " << view.cols << ", " << view.rows << endl;
 					cv::cvtColor(view, view, CV_BGR2RGB);
 
 					// For projecting circles to the real world
@@ -179,13 +193,19 @@ int main(int argc, char* argv[])
 #pragma region command keys
 					// Command keys
 					if (waitKey(1) == 113) {
+						// press 'q'
+						processing = 0;
 						break;
 					}
-					else if (waitKey(1) == 99) {
+					if (waitKey(1) == 99) {
+						// press 'c'
 						MODE = CALIBRATION_MODE;
 						cout << "going to calibration mode..." << endl;
+						calibration_manager.switch_to_calibration_mode();
 					}
 #pragma endregion
+					
+					calibration_manager.calibrate_camera(view);
 #pragma region Display result
 					
 
@@ -214,7 +234,7 @@ int main(int argc, char* argv[])
 				}
 			}
 
-		}
+		}while (processing == 1);
 
 #pragma endregion Capture and processing loop
 	}

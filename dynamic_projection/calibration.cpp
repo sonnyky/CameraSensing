@@ -26,3 +26,13 @@ void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, S
 		outputFileName_
 	);
 }
+
+void Tinker::calibration::calibrate_camera(Mat image)
+{
+	camera_calibrator.calibrate(image);
+}
+
+void Tinker::calibration::switch_to_calibration_mode()
+{
+	camera_calibrator.set_to_calibration_mode();
+}

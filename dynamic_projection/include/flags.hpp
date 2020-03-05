@@ -30,9 +30,10 @@ static const char no_show_processed_video[] = "Optional. Do not show processed v
 
 /// @brief Message for raw output
 static const char raw_output_message[] = "Optional. Output inference results as raw values.";
+DEFINE_bool(h, false, help_message);
 
 DEFINE_uint64(w, 7, help_message);
-DEFINE_uint64(h, 4, help_message);
+DEFINE_uint64(height, 4, help_message);
 DEFINE_string(pt, "chessboard", video_message);
 DEFINE_uint64(n, 10, help_message);
 DEFINE_uint64(d, 1000, help_message);
@@ -49,7 +50,7 @@ DEFINE_bool(su, true, help_message);
 */
 static void showUsage() {
 	std::cout << std::endl;
-	std::cout << "human_pose_estimation_demo [OPTION]" << std::endl;
+	std::cout << "dynami_projection [OPTION]" << std::endl;
 	std::cout << "Options:" << std::endl;
 	std::cout << std::endl;
 	std::cout << "    -h                         " << help_message << std::endl;

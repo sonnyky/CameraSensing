@@ -47,6 +47,10 @@ namespace Tinker {
 
 		void calibrate(Mat image_);
 
+		void set_to_calibration_mode();
+
+		void undistort_image(Mat image);
+
 	private:
 
 		Size boardSize, imageSize;

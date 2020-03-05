@@ -20,6 +20,9 @@ namespace Tinker {
 			int cameraId_,
 			string outputFileName_);
 
+		void calibrate_camera(Mat image);
+		void switch_to_calibration_mode();
+
 	private:
 		camera_calibration camera_calibrator;
 	};

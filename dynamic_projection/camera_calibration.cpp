@@ -6,6 +6,7 @@ Tinker::camera_calibration::camera_calibration()
 
 Tinker::camera_calibration::~camera_calibration()
 {
+	mode = CAPTURING;
 }
 
 void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, std::string outputFileName_)
@@ -13,7 +14,7 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	boardSize = boardSize_;
 	imageSize = imageSize_;
 	pattern = pattern_;
-	squareSize_ = squareSize_;
+	squareSize = squareSize_;
 	aspectRatio = aspectRatio_;
 	nframes = nFrames_;
 	delay = delay_;
@@ -26,6 +27,7 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 
 void Tinker::camera_calibration::calibrate(Mat image_)
 {
+	if (mode != CAPTURING) return;
 
 	Mat viewGray;
 
@@ -36,7 +38,6 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 	else if (pattern == "asymmetric_circles_grid") {
 		calibPattern = ASYMMETRIC_CIRCLES_GRID;
 	}
-
 	switch (calibPattern)
 	{
 	case CHESSBOARD:
@@ -70,16 +71,31 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 
 	if (mode == CAPTURING && imagePoints.size() >= (unsigned)nframes)
 	{
+		cout << "got enough points" << endl;
 		if (runAndSave(outputFilename, imagePoints, imageSize,
 			boardSize, calibPattern, squareSize, aspectRatio,
 			flags, cameraMatrix, distCoeffs,
-			writeExtrinsics, writePoints))
+			writeExtrinsics, writePoints)) {
 			mode = CALIBRATED;
-		else
-			mode = DETECTION;
+		}
+		else mode = DETECTION;
 		
 	}
+	else {
+		
+		cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
+	}
 
+}
+
+void Tinker::camera_calibration::set_to_calibration_mode()
+{
+	imagePoints.clear();
+	mode = CAPTURING;
+}
+
+void Tinker::camera_calibration::undistort_image(Mat image)
+{
 }
 
 
@@ -237,12 +253,29 @@ bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const
 	vector<float> reprojErrs;
 	double totalAvgErr = 0;
 
+	cout << "parameter check..." << endl;
+	cout << "imageSize : " << imageSize.width << ", " << imageSize.height << endl;
+	cout << "boardSize : " << boardSize.width << ", " << boardSize.height << endl;
+	cout << "pattern type : " << patternType << endl;
+	cout << "square size : " << squareSize << endl;
+	cout << "aspect ratio : " << aspectRatio << endl;
+
+
 	bool ok = runCalibration(imagePoints, imageSize, boardSize, patternType, squareSize,
 		aspectRatio, flags, cameraMatrix, distCoeffs,
 		rvecs, tvecs, reprojErrs, totalAvgErr);
 	printf("%s. avg reprojection error = %.2f\n",
 		ok ? "Calibration succeeded" : "Calibration failed",
 		totalAvgErr);
+
+	cout << "rvecs"<< endl;
+	for (int i = 0; i < rvecs.size(); i++) {
+		cout << rvecs[i] << ", " << endl;
+	}cout << endl;
+	cout << "tvecs" << endl;
+	for (int i = 0; i < tvecs.size(); i++) {
+		cout << tvecs[i] << ", " << endl;
+	}cout << endl;
 
 	if (ok)
 		saveCameraParams(outputFilename, imageSize,
