@@ -107,14 +107,14 @@ int main(int argc, char* argv[])
 		int height_first = 0;
 
 		// define dimension of the second display
-		int width_second = 1280;
-		int height_second = 960;
+		int width_second = 1920;
+		int height_second = 1080;
 
 		// move the window to the second display 
 		// (assuming the two displays are top aligned)
-		cvNamedWindow("ProjectionWindow", CV_WINDOW_AUTOSIZE);
+		cvNamedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
 		moveWindow("ProjectionWindow", width_first, height_first);
-		cvSetWindowProperty("ProjectionWindow", WND_PROP_AUTOSIZE, WINDOW_AUTOSIZE);
+		cvSetWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
 
 		// create target image
 		Mat detectionResized = Mat(Size(width_second, height_second), CV_8UC1);
@@ -154,7 +154,7 @@ int main(int argc, char* argv[])
 					cv::cvtColor(view, view, CV_BGR2RGB);
 
 					// For projecting circles to the real world
-					Mat circlesDisplay(cvSize(view.cols, view.rows), CV_8UC3, Scalar(0));
+					Mat circlesDisplay(cvSize(1920, 1080), CV_8UC3, Scalar(0));
 					if (MODE == TRACKING_MODE) {
 						for (int i = 0; i < circles.size(); i++) {
 							circle(circlesDisplay, circles[i], radius, CvScalar(255, 255, 255), -1, 8, 0);
@@ -226,9 +226,8 @@ int main(int argc, char* argv[])
 
 					// show image
 					resize(view, detectionResized, CvSize(width_second, height_second));
-					resize(circlesDisplay, projectionResized, CvSize(width_second, height_second));
 					imshow("My Window", detectionResized);
-					imshow("ProjectionWindow", projectionResized);
+					imshow("ProjectionWindow", circlesDisplay);
 #pragma endregion
 
 				}

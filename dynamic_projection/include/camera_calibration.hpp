@@ -51,8 +51,40 @@ namespace Tinker {
 
 		void undistort_image(Mat image);
 
+		// Setup the points on the real world coordinate system for computing the board pose as seen by the camera
+		void setup_candidate_object_points();
+
+		void load(string camera_config);
+
+		bool find_board(Mat img, vector<Point2f> img_points);
+		void compute_candidate_board_pose(const vector<cv::Point2f> & imgPts, cv::Mat& boardRot, cv::Mat& boardTrans);
+
+		// Back project points in the image coordinates to real world (board) coordinates using the extrinsics matrices
+		bool back_project(const Mat& boardRot64,
+			const Mat& boardTrans64,
+			const vector<Point2f>& imgPt,
+			vector<Point3f>& worldPt);
+
+		// candidate object points in the world coordinate system as seen from the real world (board) coordinates
+		vector<cv::Point3f> candidateObjectPts;
+
+		// object points in the world coordinate system
+		vector<vector<cv::Point3f>> objectPoints;
+
+		vector<vector<Point2f>> imagePointsCamObj;
+
+		vector<cv::Point3f> get_candidate_object_points() { return candidateObjectPts; }
+		vector<vector<cv::Point3f>> get_object_points() { return objectPoints; }
+
+		vector<Mat> get_board_rotations() { return boardRotations; }
+		vector<Mat> get_board_translations() { return boardTranslations; }
+
 	private:
 
+		vector<Mat> boardRotations;
+		vector<Mat> boardTranslations;
+
+#pragma region camera calibration variables
 		Size boardSize, imageSize;
 		float squareSize, aspectRatio;
 		Mat cameraMatrix, distCoeffs;
@@ -70,13 +102,18 @@ namespace Tinker {
 		clock_t prevTimestamp = 0;
 		int mode = DETECTION;
 		int cameraId = 0;
-		vector<vector<Point2f> > imagePoints;
 		vector<string> imageList;
 		String pattern = "chessboard";
+
+		bool camera_is_calibrated;
+		vector<vector<Point2f> > imagePoints;
 
 		vector<Point2f> pointbuf;
 		bool found;
 		clock_t previous_timestamp = 0;
+#pragma endregion
+
+#pragma region camera calibration methods
 
 		static double computeReprojectionErrors(
 			const vector<vector<Point3f> >& objectPoints,
@@ -110,4 +147,5 @@ namespace Tinker {
 			float aspectRatio, int flags, Mat& cameraMatrix,
 			Mat& distCoeffs, bool writeExtrinsics, bool writePoints);
 	};
+#pragma endregion
 }

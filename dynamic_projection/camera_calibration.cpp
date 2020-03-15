@@ -23,6 +23,16 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	writeExtrinsics = writeExtrinsics_;
 	cameraId = cameraId_;
 	outputFilename = outputFileName_;
+
+	// check for previous calibration files with the same file name
+	struct stat buffer;
+	bool found = stat(outputFileName_.c_str(), &buffer) == 0;
+	cout << "Camera calibration file exists : " << found << endl;
+	if (found) {
+		camera_is_calibrated = true;
+		FileStorage fs(outputFileName_, FileStorage::READ);
+		fs["camera_matrix"] >> cameraMatrix;
+	}
 }
 
 void Tinker::camera_calibration::calibrate(Mat image_)
@@ -98,7 +108,81 @@ void Tinker::camera_calibration::undistort_image(Mat image)
 {
 }
 
+void Tinker::camera_calibration::setup_candidate_object_points()
+{
+	candidateObjectPts.clear();
+	for (int i = 0; i < boardSize.height; i++) {
+		for (int j = 0; j < boardSize.width; j++) {
+			candidateObjectPts.push_back(cv::Point3f(float(j * squareSize), float(i * squareSize), 0));
+		}
+	}
+}
 
+void Tinker::camera_calibration::load(string camera_config)
+{
+}
+
+bool Tinker::camera_calibration::find_board(Mat img, vector<Point2f> img_points)
+{
+	bool foundChessCorners = findChessboardCorners(img, boardSize, img_points,
+		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+	return foundChessCorners;
+}
+
+
+
+void Tinker::camera_calibration::compute_candidate_board_pose(const vector<cv::Point2f>& imgPts, cv::Mat & boardRot, cv::Mat & boardTrans)
+{
+	cv::solvePnP(candidateObjectPts, imgPts,
+		cameraMatrix,
+		distCoeffs,
+		boardRot, boardTrans);
+}
+
+bool Tinker::camera_calibration::back_project(const Mat & boardRot64, const Mat & boardTrans64, const vector<Point2f>& imgPt, vector<Point3f>& worldPt)
+{
+	if (imgPt.size() == 0) {
+		return false;
+	}
+	else
+	{
+		Mat imgPt_h = Mat::zeros(3, imgPt.size(), CV_32F);
+		for (int h = 0; h < imgPt.size(); ++h) {
+			imgPt_h.at<float>(0, h) = imgPt[h].x;
+			imgPt_h.at<float>(1, h) = imgPt[h].y;
+			imgPt_h.at<float>(2, h) = 1.0f;
+		}
+		Mat Kinv64 = cameraMatrix.inv();
+		Mat Kinv, boardRot, boardTrans;
+		Kinv64.convertTo(Kinv, CV_32F);
+		boardRot64.convertTo(boardRot, CV_32F);
+		boardTrans64.convertTo(boardTrans, CV_32F);
+
+		// Transform all image points to world points in camera reference frame
+		// and then into the plane reference frame
+		Mat worldImgPt = Mat::zeros(3, imgPt.size(), CV_32F);
+		Mat rot3x3;
+		Rodrigues(boardRot, rot3x3);
+
+		Mat transPlaneToCam = rot3x3.inv()*boardTrans;
+
+		for (int i = 0; i < imgPt.size(); ++i) {
+			Mat col = imgPt_h.col(i);
+			Mat worldPtcam = Kinv * col;
+			Mat worldPtPlane = rot3x3.inv()*(worldPtcam);
+
+			float scale = transPlaneToCam.at<float>(2) / worldPtPlane.at<float>(2);
+			Mat worldPtPlaneReproject = scale * worldPtPlane - transPlaneToCam;
+
+			Point3f pt;
+			pt.x = worldPtPlaneReproject.at<float>(0);
+			pt.y = worldPtPlaneReproject.at<float>(1);
+			pt.z = 0;
+			worldPt.push_back(pt);
+		}
+	}
+	return true;
+}
 
 double Tinker::camera_calibration::computeReprojectionErrors(const vector<vector<Point3f>>& objectPoints, const vector<vector<Point2f>>& imagePoints, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const Mat & cameraMatrix, const Mat & distCoeffs, vector<float>& perViewErrors)
 {
@@ -252,14 +336,6 @@ bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const
 	vector<Mat> rvecs, tvecs;
 	vector<float> reprojErrs;
 	double totalAvgErr = 0;
-
-	cout << "parameter check..." << endl;
-	cout << "imageSize : " << imageSize.width << ", " << imageSize.height << endl;
-	cout << "boardSize : " << boardSize.width << ", " << boardSize.height << endl;
-	cout << "pattern type : " << patternType << endl;
-	cout << "square size : " << squareSize << endl;
-	cout << "aspect ratio : " << aspectRatio << endl;
-
 
 	bool ok = runCalibration(imagePoints, imageSize, boardSize, patternType, squareSize,
 		aspectRatio, flags, cameraMatrix, distCoeffs,
