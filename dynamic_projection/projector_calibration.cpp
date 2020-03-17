@@ -14,20 +14,20 @@ void Tinker::projector_calibration::load(string projector_config)
 
 void Tinker::projector_calibration::set_static_candidate_image_points()
 {
-	candidateImagePoints.clear();
+	candidate_image_points.clear();
 	Point2f p;
-	for (int i = 0; i < boardSize.height; i++) {
-		for (int j = 0; j < boardSize.width; j++) {
+	for (int i = 0; i < circlePatternSize.height; i++) {
+		for (int j = 0; j < circlePatternSize.width; j++) {
 			p.x = patternPosition.x + float(((2 * j) + (i % 2)) * squareSize);
 			p.y = patternPosition.y + float(i * squareSize);
-			candidateImagePoints.push_back(p);
+			candidate_image_points.push_back(p);
 		}
 	}
 }
 
 void Tinker::projector_calibration::set_candidate_image_points(vector<cv::Point2f> pts)
 {
-	candidateImagePoints = pts;
+	candidate_image_points = pts;
 }
 
 void Tinker::projector_calibration::setPatternPosition(float px, float py)
@@ -40,13 +40,15 @@ void Tinker::projector_calibration::calibrate()
 	runAndSave(outputFileName, imagePointsProjObj, objectPoints, imageSize, 1, 0, cameraMatrix, distCoeffs, true, true);
 }
 
-void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, Pattern _patternType)
+void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, string _outputFileName, 
+	Size _patternSize, float _squareSize, Pattern _patternType, float px, float py)
 {
 	imageSize = _imageSize;
 	outputFileName = _outputFileName;
 	circlePatternSize = _patternSize;
 	squareSize = _squareSize;
 	patternType = _patternType;
+	patternPosition = Point2f(px, py);
 }
 
 double Tinker::projector_calibration::computeReprojectionErrors(const vector<vector<Point3f>>& objectPoints, const vector<vector<Point2f>>& imagePoints, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const Mat & cameraMatrix, const Mat & distCoeffs, vector<float>& perViewErrors)

@@ -2,8 +2,6 @@
 
 Tinker::calibration::calibration()
 {
-	camera_calibrator = camera_calibration();
-	projector_calibrator = projector_calibration();
 	camera_is_calibrated = false;
 	mode = STANDBY;
 }
@@ -40,9 +38,15 @@ void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, S
 	}
 }
 
-void Tinker::calibration::setup_projector_calibration_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, Pattern _patternType)
+void Tinker::calibration::setup_projector_calibration_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, 
+	Pattern _patternType, float px, float py)
 {
-	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _patternType);
+	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _patternType, px, py);
+}
+
+void Tinker::calibration::set_projector_static_image_points()
+{
+	projector_calibrator.set_static_candidate_image_points();
 }
 
 void Tinker::calibration::calibrate_camera(Mat image)
@@ -138,14 +142,19 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 	return bPrintedPatternFound;
 }
 
-void Tinker::calibration::draw_projector_pattern(Mat image)
+void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 {
-	// create circular calibration pattern
+	if (mode != PROJECTOR_CAPTURING) return;
 	int radius = 25;
+
+	if (mode == PROJECTOR_CALIBRATED) {
+		set_dynamic_projector_image_points(image);
+	}
 
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
 	for (int i = 0; i < points.size(); i++) {
-		circle(image, points[i], radius, CvScalar(255, 255, 255), -1, 8, 0);
+		cout << points[i].x << ", " << points[i].y << endl;
+		circle(projectorImage, points[i], radius, CvScalar(255, 255, 255), -1, 8, 0);
 	}
 	
 }
@@ -211,6 +220,11 @@ void Tinker::calibration::stereo_calibrate()
 	cv::Rodrigues(rotation3x3, rotCamToProj);
 }
 
+void Tinker::calibration::start_projector_calibration()
+{
+	mode = PROJECTOR_CAPTURING;
+}
+
 bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 {
 	vector<cv::Point2f> chessImgPts;
@@ -218,6 +232,8 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 	bool bPrintedPatternFound = camera_calibrator.find_board(img, chessImgPts);
 
 	if (bPrintedPatternFound) {
+
+		drawChessboardCorners(img, camera_calibrator.get_board_size(), Mat(chessImgPts), bPrintedPatternFound);
 
 		vector<cv::Point2f> circlesImgPts;
 		bool bProjectedPatternFound = cv::findCirclesGrid(processedImg, projector_calibrator.get_circle_pattern_size(), circlesImgPts, cv::CALIB_CB_ASYMMETRIC_GRID);

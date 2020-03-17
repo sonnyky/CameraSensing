@@ -112,20 +112,21 @@ int main(int argc, char* argv[])
 
 		// move the window to the second display 
 		// (assuming the two displays are top aligned)
-		/*cvNamedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
+		cvNamedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
 		moveWindow("ProjectionWindow", width_first, height_first);
-		cvSetWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);*/
+		cvSetWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
 
 		// create target image
 		Mat detectionResized = Mat(Size(width_second, height_second), CV_8UC1);
-		Mat projectionResized = Mat(Size(width_second, height_second), CV_8UC1);
+		Mat projection = Mat(Size(width_second, height_second), CV_8UC1);
 #pragma endregion
 #pragma region calibration parameters settings and calibration object instantiation
 		
 		Tinker::calibration calibration_manager;
 
 		calibration_manager.setup_camera_calibration_parameters(cvSize(FLAGS_w, FLAGS_height), cvSize(640, 480), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
-		calibration_manager.setup_projector_calibration_parameters(cvSize(1920, 1080), FLAGS_ps, Size(4,5), 40, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID);
+		calibration_manager.setup_projector_calibration_parameters(cvSize(1920, 1080), FLAGS_ps, Size(4,5), 40, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 500, 250);
+		calibration_manager.set_projector_static_image_points();
 #pragma endregion
 #pragma region Capture and processing loop
 		int processing = 1;
@@ -150,6 +151,8 @@ int main(int argc, char* argv[])
 
 #pragma region Calibration
 					calibration_manager.calibrate_camera(view);
+
+					calibration_manager.draw_projector_pattern(view, projection);
 					calibration_manager.calibrate_projector(view);
 #pragma endregion
 #pragma region command keys
@@ -168,6 +171,7 @@ int main(int argc, char* argv[])
 					if (waitKey(1) == 112) {
 						// press 'p'
 						cout << "calibrating projector..." << endl;
+						calibration_manager.start_projector_calibration();
 					}
 #pragma endregion
 					
@@ -192,6 +196,7 @@ int main(int argc, char* argv[])
 					// show image
 					resize(view, detectionResized, CvSize(width_second, height_second));
 					imshow("My Window", detectionResized);
+					imshow("ProjectionWindow", projection);
 #pragma endregion
 
 				}

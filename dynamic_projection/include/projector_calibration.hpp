@@ -19,7 +19,6 @@ namespace Tinker {
 		void set_static_candidate_image_points();
 		void set_candidate_image_points(vector<cv::Point2f> pts);
 
-		vector<Point2f> candidateImagePoints;
 		void setPatternPosition(float px, float py);
 
 		vector<vector<Point2f>> imagePointsProjObj;
@@ -35,14 +34,14 @@ namespace Tinker {
 
 		void calibrate();
 
-		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, Pattern _patternType);
+		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, Pattern _patternType, float px, float py);
 
 	private:
 		// The cameraMatrix here is actually the projector intrinsics matrix. Since we are using inverse camera calibration, I'm leaving it named as cameraMatrix
 		Mat cameraMatrix, distCoeffs;
 		Size circlePatternSize;
 
-		Size boardSize, imageSize;
+		Size imageSize;
 		float squareSize;
 
 		Pattern patternType;
