@@ -23,16 +23,7 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	writeExtrinsics = writeExtrinsics_;
 	cameraId = cameraId_;
 	outputFilename = outputFileName_;
-
-	// check for previous calibration files with the same file name
-	struct stat buffer;
-	bool found = stat(outputFileName_.c_str(), &buffer) == 0;
-	cout << "Camera calibration file exists : " << found << endl;
-	if (found) {
-		camera_is_calibrated = true;
-		FileStorage fs(outputFileName_, FileStorage::READ);
-		fs["camera_matrix"] >> cameraMatrix;
-	}
+	load_camera_matrix(outputFileName_);
 }
 
 void Tinker::camera_calibration::calibrate(Mat image_)
@@ -87,6 +78,7 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 			flags, cameraMatrix, distCoeffs,
 			writeExtrinsics, writePoints)) {
 			mode = CALIBRATED;
+			load_camera_matrix(outputFilename);
 		}
 		else mode = DETECTION;
 		
@@ -182,6 +174,20 @@ bool Tinker::camera_calibration::back_project(const Mat & boardRot64, const Mat 
 		}
 	}
 	return true;
+}
+
+void Tinker::camera_calibration::load_camera_matrix(string fileName)
+{
+
+	// check for previous calibration files with the same file name
+	struct stat buffer;
+	bool found = stat(fileName.c_str(), &buffer) == 0;
+	cout << "Camera calibration file exists : " << found << endl;
+	if (found) {
+		camera_is_calibrated = true;
+		FileStorage fs(fileName, FileStorage::READ);
+		fs["camera_matrix"] >> cameraMatrix;
+	}
 }
 
 double Tinker::camera_calibration::computeReprojectionErrors(const vector<vector<Point3f>>& objectPoints, const vector<vector<Point2f>>& imagePoints, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const Mat & cameraMatrix, const Mat & distCoeffs, vector<float>& perViewErrors)
@@ -331,36 +337,28 @@ void Tinker::camera_calibration::saveCameraParams(const string & filename, Size 
 	}
 }
 
-bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const vector<vector<Point2f>>& imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, int flags, Mat & cameraMatrix, Mat & distCoeffs, bool writeExtrinsics, bool writePoints)
+bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const vector<vector<Point2f>>& imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, int flags, Mat & _cameraMatrix, Mat & distCoeffs, bool writeExtrinsics, bool writePoints)
 {
 	vector<Mat> rvecs, tvecs;
 	vector<float> reprojErrs;
 	double totalAvgErr = 0;
 
 	bool ok = runCalibration(imagePoints, imageSize, boardSize, patternType, squareSize,
-		aspectRatio, flags, cameraMatrix, distCoeffs,
+		aspectRatio, flags, _cameraMatrix, distCoeffs,
 		rvecs, tvecs, reprojErrs, totalAvgErr);
 	printf("%s. avg reprojection error = %.2f\n",
 		ok ? "Calibration succeeded" : "Calibration failed",
 		totalAvgErr);
 
-	cout << "rvecs"<< endl;
-	for (int i = 0; i < rvecs.size(); i++) {
-		cout << rvecs[i] << ", " << endl;
-	}cout << endl;
-	cout << "tvecs" << endl;
-	for (int i = 0; i < tvecs.size(); i++) {
-		cout << tvecs[i] << ", " << endl;
-	}cout << endl;
-
-	if (ok)
+	if (ok) {
 		saveCameraParams(outputFilename, imageSize,
 			boardSize, squareSize, aspectRatio,
-			flags, cameraMatrix, distCoeffs,
+			flags, _cameraMatrix, distCoeffs,
 			writeExtrinsics ? rvecs : vector<Mat>(),
 			writeExtrinsics ? tvecs : vector<Mat>(),
 			writeExtrinsics ? reprojErrs : vector<float>(),
 			writePoints ? imagePoints : vector<vector<Point2f> >(),
 			totalAvgErr);
+	}
 	return ok;
 }

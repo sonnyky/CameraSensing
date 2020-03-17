@@ -39,6 +39,7 @@ DEFINE_uint64(n, 10, help_message);
 DEFINE_uint64(d, 1000, help_message);
 DEFINE_uint64(s, 1, help_message);
 DEFINE_string(o, "camera_params.xml", video_message);
+DEFINE_string(ps, "projector_params.xml", video_message);
 DEFINE_bool(op, false, help_message);
 DEFINE_bool(oe, true, help_message);
 DEFINE_uint64(zt, 8, help_message);

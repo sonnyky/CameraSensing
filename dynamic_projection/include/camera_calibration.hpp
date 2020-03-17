@@ -79,6 +79,15 @@ namespace Tinker {
 		vector<Mat> get_board_rotations() { return boardRotations; }
 		vector<Mat> get_board_translations() { return boardTranslations; }
 
+		Size get_board_size() { return boardSize; }
+
+		Mat get_camera_matrix() { return cameraMatrix; }
+		Mat get_dist_coeffs() { return distCoeffs; }
+
+		void load_camera_matrix(string fileName);
+
+		Size get_image_size() { return imageSize; };
+
 	private:
 
 		vector<Mat> boardRotations;
@@ -144,7 +153,7 @@ namespace Tinker {
 		static bool runAndSave(const string& outputFilename,
 			const vector<vector<Point2f> >& imagePoints,
 			Size imageSize, Size boardSize, Pattern patternType, float squareSize,
-			float aspectRatio, int flags, Mat& cameraMatrix,
+			float aspectRatio, int flags, Mat& _cameraMatrix,
 			Mat& distCoeffs, bool writeExtrinsics, bool writePoints);
 	};
 #pragma endregion

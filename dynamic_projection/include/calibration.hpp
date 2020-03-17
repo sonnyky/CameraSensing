@@ -2,6 +2,7 @@
 #include "projector_calibration.hpp"
 
 namespace Tinker {
+	enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2 , DYNAMIC_DETECTION = 3 };
 	class calibration {
 	public:
 		calibration();
@@ -21,15 +22,13 @@ namespace Tinker {
 			int cameraId_,
 			string outputFileName_);
 
+		void setup_projector_calibration_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, Pattern _patternType);
+
 		void calibrate_camera(Mat image);
 		void switch_to_calibration_mode();
 
 		void load(string cameraConfig, string projectorConfig, string extrinsicsConfig);
 		
-		void draw_projector_points(Mat image);
-
-		void detect_circles_from_projector(Mat image);
-
 		bool add_projected(cv::Mat img, cv::Mat processedImg);
 
 		const cv::Mat & get_cam_to_proj_rotation() { return rotCamToProj; }
@@ -39,6 +38,15 @@ namespace Tinker {
 		vector<Point2f> get_projected(const vector<Point3f> & pts,
 			const cv::Mat & rotObjToCam,
 			const cv::Mat & transObjToCam);
+		bool set_dynamic_projector_image_points(cv::Mat img);
+
+		void draw_projector_pattern(Mat image);
+
+		void process_image_for_circle_detection(Mat img);
+
+		void calibrate_projector(Mat img);
+
+		void stereo_calibrate();
 
 	private:
 		camera_calibration camera_calibrator;
@@ -47,6 +55,9 @@ namespace Tinker {
 		Mat camera_projector_extrinsics;
 		Mat projector_matrix;
 		bool camera_is_calibrated;
+		Mat processedImg;
+
+		int mode;
 
 	protected:
 		cv::Mat rotCamToProj;
