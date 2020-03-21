@@ -185,7 +185,7 @@ void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 
 	if (mode == PROJECTOR_CALIBRATED) {
 		cout << "checking dynamic points" << endl;
-		set_dynamic_projector_image_points_test(image);
+		set_dynamic_projector_image_points(image);
 	}
 	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
@@ -215,8 +215,7 @@ void Tinker::calibration::calibrate_projector(Mat img)
 
 	if (add_projected(img, processedImg)) {
 		
-		//projector_calibrator.calibrate();
-		cout << "add_projected success" << endl;
+		projector_calibrator.calibrate();
 		set_dynamic_projector_image_points(img);
 		mode = PROJECTOR_CALIBRATED;
 	}
@@ -278,7 +277,7 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 		vector<cv::Point2f> circlesImgPts;
 		bool bProjectedPatternFound = cv::findCirclesGrid(processedImg, projector_calibrator.get_circle_pattern_size(), circlesImgPts, cv::CALIB_CB_ASYMMETRIC_GRID);
 
-		if (!bProjectedPatternFound) {
+		if (bProjectedPatternFound) {
 
 			vector<cv::Point3f> circlesObjectPts;
 			cv::Mat boardRot;

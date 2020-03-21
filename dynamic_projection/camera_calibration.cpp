@@ -94,6 +94,7 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 void Tinker::camera_calibration::set_to_calibration_mode()
 {
 	imagePoints.clear();
+	prevTimestamp = 0;
 	mode = CAPTURING;
 }
 

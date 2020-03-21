@@ -119,7 +119,7 @@ namespace Tinker {
 		String pattern = "chessboard";
 
 		bool camera_is_calibrated;
-		vector<vector<Point2f> > imagePoints;
+		vector<vector<Point2f>> imagePoints;
 
 		vector<Point2f> pointbuf;
 		bool found;
