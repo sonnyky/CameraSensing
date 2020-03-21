@@ -27,6 +27,8 @@ void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, S
 		outputFileName_
 	);
 
+	camera_calibrator.setup_candidate_object_points();
+
 	// check for previous calibration files with the same file name
 	struct stat buffer;
 	bool fileFound = stat(outputFileName_.c_str(), &buffer) == 0;
@@ -93,7 +95,8 @@ vector<Point2f> Tinker::calibration::get_projected(const vector<Point3f>& pts, c
 bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 {
 	vector<cv::Point2f> chessImgPts;
-	bool bPrintedPatternFound = camera_calibrator.find_board(img, chessImgPts);
+	bool bPrintedPatternFound = camera_calibrator.find_board(img);
+	chessImgPts = camera_calibrator.get_detected_board_points();
 
 	if (bPrintedPatternFound) {
 
@@ -142,18 +145,51 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 	return bPrintedPatternFound;
 }
 
+bool Tinker::calibration::set_dynamic_projector_image_points_test(cv::Mat img)
+{
+	vector<cv::Point2f> chessImgPts;
+	bool bPrintedPatternFound = camera_calibrator.find_board(img);
+	chessImgPts = camera_calibrator.get_detected_board_points();
+
+	if (bPrintedPatternFound) {
+
+		cv::Mat boardRot;
+		cv::Mat boardTrans;
+		camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
+		drawChessboardCorners(img, camera_calibrator.get_board_size(), Mat(chessImgPts), bPrintedPatternFound);
+		Mat Rc1, Tc1, Rc1inv, Tc1inv;
+		Rc1 = boardRot;
+		Tc1 = boardTrans;
+		Mat auxRinv = Mat::eye(3, 3, CV_32F);
+		Rodrigues(Rc1, auxRinv);
+		auxRinv = auxRinv.inv();
+		Rodrigues(auxRinv, Rc1inv);
+		Tc1inv = -auxRinv * Tc1;
+		vector<Point2f> followingPatternImagePoints;
+		projectPoints(Mat(camera_calibrator.get_candidate_object_points()),
+			Rc1, Tc1,
+			camera_calibrator.get_camera_matrix(),
+			camera_calibrator.get_dist_coeffs(),
+			followingPatternImagePoints);
+
+		projector_calibrator.set_candidate_image_points(followingPatternImagePoints);
+	}
+
+	return false;
+}
+
 void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 {
-	if (mode != PROJECTOR_CAPTURING) return;
+	if (mode != PROJECTOR_CAPTURING && mode != PROJECTOR_CALIBRATED) return;
 	int radius = 25;
 
 	if (mode == PROJECTOR_CALIBRATED) {
-		set_dynamic_projector_image_points(image);
+		cout << "checking dynamic points" << endl;
+		set_dynamic_projector_image_points_test(image);
 	}
-
+	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
 	for (int i = 0; i < points.size(); i++) {
-		cout << points[i].x << ", " << points[i].y << endl;
 		circle(projectorImage, points[i], radius, CvScalar(255, 255, 255), -1, 8, 0);
 	}
 	
@@ -178,7 +214,11 @@ void Tinker::calibration::calibrate_projector(Mat img)
 	process_image_for_circle_detection(img);
 
 	if (add_projected(img, processedImg)) {
-		projector_calibrator.calibrate();
+		
+		//projector_calibrator.calibrate();
+		cout << "add_projected success" << endl;
+		set_dynamic_projector_image_points(img);
+		mode = PROJECTOR_CALIBRATED;
 	}
 	imshow("ImageThresholded", processedImg);
 }
@@ -229,20 +269,21 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 {
 	vector<cv::Point2f> chessImgPts;
 
-	bool bPrintedPatternFound = camera_calibrator.find_board(img, chessImgPts);
-
+	bool bPrintedPatternFound = camera_calibrator.find_board(img);
+	chessImgPts = camera_calibrator.get_detected_board_points();
 	if (bPrintedPatternFound) {
-
-		drawChessboardCorners(img, camera_calibrator.get_board_size(), Mat(chessImgPts), bPrintedPatternFound);
-
+		Size board = camera_calibrator.get_board_size();
+		
+		drawChessboardCorners(img, board, Mat(chessImgPts), bPrintedPatternFound);
 		vector<cv::Point2f> circlesImgPts;
 		bool bProjectedPatternFound = cv::findCirclesGrid(processedImg, projector_calibrator.get_circle_pattern_size(), circlesImgPts, cv::CALIB_CB_ASYMMETRIC_GRID);
 
-		if (bProjectedPatternFound) {
+		if (!bProjectedPatternFound) {
 
 			vector<cv::Point3f> circlesObjectPts;
 			cv::Mat boardRot;
 			cv::Mat boardTrans;
+
 			camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
 			camera_calibrator.back_project(boardRot, boardTrans, circlesImgPts, circlesObjectPts);
 

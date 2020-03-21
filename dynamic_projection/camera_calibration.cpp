@@ -2,6 +2,7 @@
 
 Tinker::camera_calibration::camera_calibration()
 {
+
 }
 
 Tinker::camera_calibration::~camera_calibration()
@@ -114,10 +115,12 @@ void Tinker::camera_calibration::load(string camera_config)
 {
 }
 
-bool Tinker::camera_calibration::find_board(Mat img, vector<Point2f> img_points)
+bool Tinker::camera_calibration::find_board(Mat img)
 {
-	bool foundChessCorners = findChessboardCorners(img, boardSize, img_points,
+	detected_board_points.clear();
+	bool foundChessCorners = findChessboardCorners(img, boardSize, detected_board_points,
 		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+
 	return foundChessCorners;
 }
 
@@ -125,6 +128,9 @@ bool Tinker::camera_calibration::find_board(Mat img, vector<Point2f> img_points)
 
 void Tinker::camera_calibration::compute_candidate_board_pose(const vector<cv::Point2f>& imgPts, cv::Mat & boardRot, cv::Mat & boardTrans)
 {
+	cout << "candidateObjectPts  : " << candidateObjectPts.size() << endl;
+	cout << "imgPts  : " << imgPts.size() << endl;
+
 	cv::solvePnP(candidateObjectPts, imgPts,
 		cameraMatrix,
 		distCoeffs,
@@ -187,6 +193,7 @@ void Tinker::camera_calibration::load_camera_matrix(string fileName)
 		camera_is_calibrated = true;
 		FileStorage fs(fileName, FileStorage::READ);
 		fs["camera_matrix"] >> cameraMatrix;
+		fs["distortion_coefficients"] >> distCoeffs;
 	}
 }
 

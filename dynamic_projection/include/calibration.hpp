@@ -42,6 +42,7 @@ namespace Tinker {
 			const cv::Mat & rotObjToCam,
 			const cv::Mat & transObjToCam);
 		bool set_dynamic_projector_image_points(cv::Mat img);
+		bool set_dynamic_projector_image_points_test(cv::Mat img);
 
 		void draw_projector_pattern(Mat image, Mat projectorImage);
 

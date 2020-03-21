@@ -56,7 +56,7 @@ namespace Tinker {
 
 		void load(string camera_config);
 
-		bool find_board(Mat img, vector<Point2f> img_points);
+		bool find_board(Mat img);
 		void compute_candidate_board_pose(const vector<cv::Point2f> & imgPts, cv::Mat& boardRot, cv::Mat& boardTrans);
 
 		// Back project points in the image coordinates to real world (board) coordinates using the extrinsics matrices
@@ -88,7 +88,11 @@ namespace Tinker {
 
 		Size get_image_size() { return imageSize; };
 
+		vector<Point2f> get_detected_board_points() { return detected_board_points; };
+
 	private:
+
+		vector<Point2f> detected_board_points;
 
 		vector<Mat> boardRotations;
 		vector<Mat> boardTranslations;

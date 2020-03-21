@@ -194,8 +194,7 @@ int main(int argc, char* argv[])
 					*/
 
 					// show image
-					resize(view, detectionResized, CvSize(width_second, height_second));
-					imshow("My Window", detectionResized);
+					imshow("My Window", view);
 					imshow("ProjectionWindow", projection);
 #pragma endregion
 
