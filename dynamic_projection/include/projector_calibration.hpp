@@ -5,7 +5,7 @@ using namespace cv;
 
 namespace Tinker {
 
-	enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2, DYNAMIC_DETECTION = 3 };
+	enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2, DYNAMIC_DETECTION = 3, STEREO_CALIBRATED = 4 };
 
 	class projector_calibration {
 	public:
@@ -23,7 +23,7 @@ namespace Tinker {
 
 		void setPatternPosition(float px, float py);
 
-		vector<vector<Point2f>> imagePointsProjObj;
+		vector<vector<Point2f>> imagePoints;
 		vector<Point2f> candidate_image_points;
 		vector<Point2f> get_candidate_image_points() { return candidate_image_points; }
 		vector<vector<cv::Point3f>> get_object_points() { return objectPoints; }
@@ -36,7 +36,7 @@ namespace Tinker {
 
 		void start_projector_calibration();
 
-		void calibrate();
+		bool calibrate();
 
 		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, Pattern _patternType, float px, float py);
 
@@ -64,7 +64,6 @@ namespace Tinker {
 		clock_t prevTimestamp = 0;
 		int delay;
 		bool projector_is_calibrated = false;
-		vector<vector<Point2f>> imagePoints;
 
 #pragma region projector calibration methods
 

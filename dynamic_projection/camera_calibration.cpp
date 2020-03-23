@@ -129,8 +129,8 @@ bool Tinker::camera_calibration::find_board(Mat img)
 
 void Tinker::camera_calibration::compute_candidate_board_pose(const vector<cv::Point2f>& imgPts, cv::Mat & boardRot, cv::Mat & boardTrans)
 {
-	cout << "candidateObjectPts  : " << candidateObjectPts.size() << endl;
-	cout << "imgPts  : " << imgPts.size() << endl;
+	/*cout << "candidateObjectPts  : " << candidateObjectPts.size() << endl;
+	cout << "imgPts  : " << imgPts.size() << endl;*/
 
 	cv::solvePnP(candidateObjectPts, imgPts,
 		cameraMatrix,

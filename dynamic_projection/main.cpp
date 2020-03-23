@@ -125,7 +125,7 @@ int main(int argc, char* argv[])
 		Tinker::calibration calibration_manager;
 
 		calibration_manager.setup_camera_calibration_parameters(cvSize(FLAGS_w, FLAGS_height), cvSize(640, 480), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
-		calibration_manager.setup_projector_calibration_parameters(cvSize(1920, 1080), FLAGS_ps, Size(4,5), 40, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 500, 250);
+		calibration_manager.setup_projector_calibration_parameters(cvSize(1920, 1080), FLAGS_ps, Size(4,5), 80, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 500, 250);
 		calibration_manager.set_projector_static_image_points();
 #pragma endregion
 #pragma region Capture and processing loop
@@ -170,7 +170,7 @@ int main(int argc, char* argv[])
 					}
 					if (waitKey(1) == 112) {
 						// press 'p'
-						cout << "calibrating projector..." << endl;
+						cout << "[main] starting projector calibration " << endl;
 						calibration_manager.start_projector_calibration();
 					}
 #pragma endregion

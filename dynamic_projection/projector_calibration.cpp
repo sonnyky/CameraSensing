@@ -17,6 +17,7 @@ void Tinker::projector_calibration::set_static_candidate_image_points()
 {
 	candidate_image_points.clear();
 	Point2f p;
+	//cout << "circlePatternSize : " << circlePatternSize.height << ", " << circlePatternSize.width << endl;
 	for (int i = 0; i < circlePatternSize.height; i++) {
 		for (int j = 0; j < circlePatternSize.width; j++) {
 			p.x = patternPosition.x + float(((2 * j) + (i % 2)) * squareSize);
@@ -38,36 +39,55 @@ void Tinker::projector_calibration::setPatternPosition(float px, float py)
 
 void Tinker::projector_calibration::start_projector_calibration()
 {
+	if (mode == PROJECTOR_CAPTURING) return;
 	imagePoints.clear();
 	prevTimestamp = 0;
 	delay = 1000;
 	mode = PROJECTOR_CAPTURING;
 }
 
-void Tinker::projector_calibration::calibrate()
+bool Tinker::projector_calibration::calibrate()
 {
-	if (mode != PROJECTOR_CAPTURING) return;
+	cout << "mode is : " << mode << endl;
+	cout << "imagePoints size : " << imagePoints.size() << endl;
 
+	if (mode != PROJECTOR_CAPTURING) return false;
 	if (imagePoints.size() >= (unsigned)nFrames) {
 		cout << "got enough points for projector intrinsics calibration." << endl;
 
 		// imagePointsProjObj and objectPoints has to have the same length
-		if (imagePointsProjObj.size() != objectPoints.size()) {
-			cout << "Mismatched sizes. imagePointsProjObj : " << imagePointsProjObj.size()
+		if (imagePoints.size() != objectPoints.size()) {
+			cout << "Mismatched sizes. imagePointsProjObj : " << imagePoints.size()
 				<< "and objectPoints : "<< objectPoints.size() << endl;
+			return false;
 		}
 
-		if (runAndSave(outputFileName, imagePointsProjObj, objectPoints, imageSize, 1, 0, cameraMatrix, distCoeffs, true, true)) {
+		if (runAndSave(outputFileName, imagePoints, objectPoints, imageSize, 1, 0, cameraMatrix, distCoeffs, true, true)) {
 			mode = PROJECTOR_CALIBRATED;
 			load_calibration_parameters(outputFileName);
-			cv::solvePnP(objectPoints, imagePointsProjObj,
+			cout << "solving PnP with projector intrinsics for boardRotations and boardTranslations as seen by the projector" << endl;
+
+			cout << "objectPoints size : " << objectPoints.size() << endl;
+			cout << "imagePoints size : " << imagePoints.size() << endl;
+			cout << "cameraMatrix size : " << cameraMatrix.size() << endl;
+			cout << "distCoeffs size : " << distCoeffs.size() << endl;
+
+			Mat rot;
+			Mat trans;
+
+			cv::solvePnP(objectPoints.back(), imagePoints.back(),
 				cameraMatrix,
 				distCoeffs,
-				boardRotations, boardTranslations);
+				rot, trans);
+
+			boardRotations.push_back(rot);
+			boardTranslations.push_back(trans);
+
+			return true;
 		}
 		else mode = STANDBY;
 	}
-
+	return false;
 
 }
 
