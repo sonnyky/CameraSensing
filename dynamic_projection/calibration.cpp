@@ -110,7 +110,7 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 		const auto & camCandObjPts = camera_calibrator.get_candidate_object_points();
 		Point3f axisX = camCandObjPts[1] - camCandObjPts[0];
 		Point3f axisY = camCandObjPts[camera_calibrator.get_board_size().width] - camCandObjPts[0];
-		Point3f pos = camCandObjPts[0] - axisY * (camera_calibrator.get_board_size().width - 2);
+		Point3f pos = camCandObjPts[0] - axisY * (camera_calibrator.get_board_size().width - 2) * 1.3;
 
 		vector<Point3f> auxObjectPoints;
 		for (int i = 0; i < projector_calibrator.get_circle_pattern_size().height; i++) {
