@@ -2,7 +2,7 @@
 #include "projector_calibration.hpp"
 
 namespace Tinker {
-	enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2 , DYNAMIC_DETECTION = 3 };
+	//enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2 , DYNAMIC_DETECTION = 3 };
 	class calibration {
 	public:
 		calibration();

@@ -5,6 +5,8 @@ using namespace cv;
 
 namespace Tinker {
 
+	enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2, DYNAMIC_DETECTION = 3, STEREO_CALIBRATED = 4 };
+
 	class projector_calibration {
 	public:
 		projector_calibration();
@@ -21,7 +23,7 @@ namespace Tinker {
 
 		void setPatternPosition(float px, float py);
 
-		vector<vector<Point2f>> imagePointsProjObj;
+		vector<vector<Point2f>> imagePoints;
 		vector<Point2f> candidate_image_points;
 		vector<Point2f> get_candidate_image_points() { return candidate_image_points; }
 		vector<vector<cv::Point3f>> get_object_points() { return objectPoints; }
@@ -32,9 +34,13 @@ namespace Tinker {
 		vector<Mat> get_board_rotations() { return boardRotations; }
 		vector<Mat> get_board_translations() { return boardTranslations; }
 
-		void calibrate();
+		void start_projector_calibration();
+
+		bool calibrate();
 
 		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, Pattern _patternType, float px, float py);
+
+		void load_calibration_parameters(string fileName);
 
 	private:
 		// The cameraMatrix here is actually the projector intrinsics matrix. Since we are using inverse camera calibration, I'm leaving it named as cameraMatrix
@@ -51,7 +57,13 @@ namespace Tinker {
 		vector<Mat> boardRotations;
 		vector<Mat> boardTranslations;
 
-		string outputFileName;
+		string outputFileName = "projector_params.xml";
+
+		int nFrames = 10;
+		int mode;
+		clock_t prevTimestamp = 0;
+		int delay;
+		bool projector_is_calibrated = false;
 
 #pragma region projector calibration methods
 

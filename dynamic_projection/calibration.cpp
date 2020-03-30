@@ -75,6 +75,7 @@ void Tinker::calibration::loadExtrinsics(string filename, bool absolute)
 	fs["Translation_Vector"] >> transCamToProj;
 }
 
+// obtains points in the projector image coordinates that correspond to points in real world coordinates. This can be used as a measure of accuracy of projected points?
 vector<Point2f> Tinker::calibration::get_projected(const vector<Point3f>& pts, const cv::Mat & rotObjToCam, const cv::Mat & transObjToCam)
 {
 	cv::Mat rotObjToProj, transObjToProj;
@@ -100,6 +101,8 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 
 	if (bPrintedPatternFound) {
 
+		drawChessboardCorners(img, camera_calibrator.get_board_size(), Mat(chessImgPts), bPrintedPatternFound);
+
 		cv::Mat boardRot;
 		cv::Mat boardTrans;
 		camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
@@ -107,7 +110,7 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 		const auto & camCandObjPts = camera_calibrator.get_candidate_object_points();
 		Point3f axisX = camCandObjPts[1] - camCandObjPts[0];
 		Point3f axisY = camCandObjPts[camera_calibrator.get_board_size().width] - camCandObjPts[0];
-		Point3f pos = camCandObjPts[0] - axisY * (camera_calibrator.get_board_size().width - 2);
+		Point3f pos = camCandObjPts[0] - axisY * (camera_calibrator.get_board_size().width - 2) * 1.3;
 
 		vector<Point3f> auxObjectPoints;
 		for (int i = 0; i < projector_calibrator.get_circle_pattern_size().height; i++) {
@@ -181,11 +184,10 @@ bool Tinker::calibration::set_dynamic_projector_image_points_test(cv::Mat img)
 void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 {
 	if (mode != PROJECTOR_CAPTURING && mode != PROJECTOR_CALIBRATED) return;
-	int radius = 25;
+	int radius = 20;
 
 	if (mode == PROJECTOR_CALIBRATED) {
-		cout << "checking dynamic points" << endl;
-		set_dynamic_projector_image_points_test(image);
+		set_dynamic_projector_image_points(image);
 	}
 	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
@@ -213,12 +215,17 @@ void Tinker::calibration::calibrate_projector(Mat img)
 
 	process_image_for_circle_detection(img);
 
+	projector_calibrator.start_projector_calibration();
+
 	if (add_projected(img, processedImg)) {
 		
-		//projector_calibrator.calibrate();
-		cout << "add_projected success" << endl;
-		set_dynamic_projector_image_points(img);
-		mode = PROJECTOR_CALIBRATED;
+		cout << "calibrating projector inside calibrate_projector"  << endl;
+		if (projector_calibrator.calibrate()) {
+			cout << "projector calibration finished!" << endl;
+			stereo_calibrate();
+
+			mode = PROJECTOR_CALIBRATED;
+		}
 	}
 	imshow("ImageThresholded", processedImg);
 }
@@ -226,8 +233,15 @@ void Tinker::calibration::calibrate_projector(Mat img)
 void Tinker::calibration::stereo_calibrate()
 {
 	const auto & objectPoints = projector_calibrator.get_object_points();
-
+	cout << "objectPoints size : " << objectPoints.size() << endl;
 	vector<vector<cv::Point2f> > auxImagePointsCamera;
+
+	cout << "check size of all parameters :" << endl;
+	cout << "camera_calibrator.get_board_rotations() : " << camera_calibrator.get_board_rotations() .size()<< endl;
+	cout << "camera_calibrator.get_board_translations() : " << camera_calibrator.get_board_translations().size() << endl;
+	cout << "camera_calibrator.get_camera_matrix() : " << camera_calibrator.get_camera_matrix().size() << endl;
+	cout << "camera_calibrator.get_dist_coeffs() : " << camera_calibrator.get_dist_coeffs().size() << endl;
+
 	for (int i = 0; i < objectPoints.size(); i++) {
 		vector<cv::Point2f> auxImagePoints;
 		projectPoints(cv::Mat(objectPoints[i]),
@@ -250,7 +264,7 @@ void Tinker::calibration::stereo_calibrate()
 
 	cv::stereoCalibrate(objectPoints,
 		auxImagePointsCamera,
-		projector_calibrator.imagePointsProjObj,
+		projector_calibrator.imagePoints,
 		cameraMatrix, cameraDistCoeffs,
 		projectorMatrix, projectorDistCoeffs,
 		camera_calibrator.get_image_size(),
@@ -278,7 +292,8 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 		vector<cv::Point2f> circlesImgPts;
 		bool bProjectedPatternFound = cv::findCirclesGrid(processedImg, projector_calibrator.get_circle_pattern_size(), circlesImgPts, cv::CALIB_CB_ASYMMETRIC_GRID);
 
-		if (!bProjectedPatternFound) {
+		if (bProjectedPatternFound) {
+			drawChessboardCorners(img, projector_calibrator.get_circle_pattern_size(), Mat(circlesImgPts), bProjectedPatternFound);
 
 			vector<cv::Point3f> circlesObjectPts;
 			cv::Mat boardRot;
@@ -289,11 +304,14 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 
 			camera_calibrator.imagePointsCamObj.push_back(chessImgPts);
 			camera_calibrator.get_object_points().push_back(camera_calibrator.get_candidate_object_points());
-			camera_calibrator.get_board_rotations().push_back(boardRot);
-			camera_calibrator.get_board_translations().push_back(boardTrans);
+			camera_calibrator.boardRotations.push_back(boardRot);
+			camera_calibrator.boardTranslations.push_back(boardTrans);
 
-			projector_calibrator.imagePointsProjObj.push_back(projector_calibrator.get_candidate_image_points());
-			projector_calibrator.get_object_points().push_back(circlesObjectPts);
+			projector_calibrator.imagePoints.push_back(projector_calibrator.get_candidate_image_points());
+			projector_calibrator.objectPoints.push_back(circlesObjectPts);
+
+			cout << "after add_projected : " << "imagePoints size : " << projector_calibrator.imagePoints.size() << endl;
+			cout << "after add_projected : " << "objectPoints size : " << projector_calibrator.objectPoints.size() << endl;
 
 			return true;
 		}

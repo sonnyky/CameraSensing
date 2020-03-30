@@ -78,6 +78,8 @@ namespace Tinker {
 
 		vector<Mat> get_board_rotations() { return boardRotations; }
 		vector<Mat> get_board_translations() { return boardTranslations; }
+		vector<Mat> boardRotations;
+		vector<Mat> boardTranslations;
 
 		Size get_board_size() { return boardSize; }
 
@@ -94,8 +96,7 @@ namespace Tinker {
 
 		vector<Point2f> detected_board_points;
 
-		vector<Mat> boardRotations;
-		vector<Mat> boardTranslations;
+		
 
 #pragma region camera calibration variables
 		Size boardSize, imageSize;
@@ -119,7 +120,7 @@ namespace Tinker {
 		String pattern = "chessboard";
 
 		bool camera_is_calibrated;
-		vector<vector<Point2f> > imagePoints;
+		vector<vector<Point2f>> imagePoints;
 
 		vector<Point2f> pointbuf;
 		bool found;

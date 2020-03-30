@@ -2,6 +2,7 @@
 
 Tinker::projector_calibration::projector_calibration()
 {
+	mode = STANDBY;
 }
 
 Tinker::projector_calibration::~projector_calibration()
@@ -16,6 +17,7 @@ void Tinker::projector_calibration::set_static_candidate_image_points()
 {
 	candidate_image_points.clear();
 	Point2f p;
+	//cout << "circlePatternSize : " << circlePatternSize.height << ", " << circlePatternSize.width << endl;
 	for (int i = 0; i < circlePatternSize.height; i++) {
 		for (int j = 0; j < circlePatternSize.width; j++) {
 			p.x = patternPosition.x + float(((2 * j) + (i % 2)) * squareSize);
@@ -35,9 +37,58 @@ void Tinker::projector_calibration::setPatternPosition(float px, float py)
 	patternPosition = Point2f(px, py);
 }
 
-void Tinker::projector_calibration::calibrate()
+void Tinker::projector_calibration::start_projector_calibration()
 {
-	runAndSave(outputFileName, imagePointsProjObj, objectPoints, imageSize, 1, 0, cameraMatrix, distCoeffs, true, true);
+	if (mode == PROJECTOR_CAPTURING) return;
+	imagePoints.clear();
+	prevTimestamp = 0;
+	delay = 1000;
+	mode = PROJECTOR_CAPTURING;
+}
+
+bool Tinker::projector_calibration::calibrate()
+{
+	cout << "mode is : " << mode << endl;
+	cout << "imagePoints size : " << imagePoints.size() << endl;
+
+	if (mode != PROJECTOR_CAPTURING) return false;
+	if (imagePoints.size() >= (unsigned)nFrames) {
+		cout << "got enough points for projector intrinsics calibration." << endl;
+
+		// imagePointsProjObj and objectPoints has to have the same length
+		if (imagePoints.size() != objectPoints.size()) {
+			cout << "Mismatched sizes. imagePointsProjObj : " << imagePoints.size()
+				<< "and objectPoints : "<< objectPoints.size() << endl;
+			return false;
+		}
+
+		if (runAndSave(outputFileName, imagePoints, objectPoints, imageSize, 1, 0, cameraMatrix, distCoeffs, true, true)) {
+			mode = PROJECTOR_CALIBRATED;
+			load_calibration_parameters(outputFileName);
+			cout << "solving PnP with projector intrinsics for boardRotations and boardTranslations as seen by the projector" << endl;
+
+			cout << "objectPoints size : " << objectPoints.size() << endl;
+			cout << "imagePoints size : " << imagePoints.size() << endl;
+			cout << "cameraMatrix size : " << cameraMatrix.size() << endl;
+			cout << "distCoeffs size : " << distCoeffs.size() << endl;
+
+			Mat rot;
+			Mat trans;
+
+			cv::solvePnP(objectPoints.back(), imagePoints.back(),
+				cameraMatrix,
+				distCoeffs,
+				rot, trans);
+
+			boardRotations.push_back(rot);
+			boardTranslations.push_back(trans);
+
+			return true;
+		}
+		else mode = STANDBY;
+	}
+	return false;
+
 }
 
 void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, string _outputFileName, 
@@ -49,6 +100,19 @@ void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, 
 	squareSize = _squareSize;
 	patternType = _patternType;
 	patternPosition = Point2f(px, py);
+}
+
+void Tinker::projector_calibration::load_calibration_parameters(string fileName)
+{
+	struct stat buffer;
+	bool found = stat(fileName.c_str(), &buffer) == 0;
+	cout << "Camera calibration file exists : " << found << endl;
+	if (found) {
+		projector_is_calibrated = true;
+		FileStorage fs(fileName, FileStorage::READ);
+		fs["camera_matrix"] >> cameraMatrix;
+		fs["distortion_coefficients"] >> distCoeffs;
+	}
 }
 
 double Tinker::projector_calibration::computeReprojectionErrors(const vector<vector<Point3f>>& objectPoints, const vector<vector<Point2f>>& imagePoints, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const Mat & cameraMatrix, const Mat & distCoeffs, vector<float>& perViewErrors)
@@ -166,6 +230,7 @@ void Tinker::projector_calibration::saveCameraParams(const string & filename, Si
 		fs << "image_points" << imagePtMat;
 	}
 }
+
 
 bool Tinker::projector_calibration::runAndSave(const string & outputFilename, const vector<vector<Point2f>>& imagePoints, vector<vector<Point3f> > objectPoints, Size imageSize, float aspectRatio, int flags, Mat & _cameraMatrix, Mat & distCoeffs, bool writeExtrinsics, bool writePoints)
 {
