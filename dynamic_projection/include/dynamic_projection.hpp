@@ -5,11 +5,14 @@
 
 #include <chrono>
 
-class position_detector {
+class dynamic_projection {
 
 public :
-	position_detector();
-	~position_detector();
+
+
+
+	dynamic_projection();
+	~dynamic_projection();
 
 
 

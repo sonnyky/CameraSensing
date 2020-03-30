@@ -1,13 +1,10 @@
 #include <iostream>
 #include <sstream>
-#include <librealsense2/rs.hpp> 
-#include "plane_detection.h"
-#include "pose_detector.hpp"
-#include "render_human_pose.hpp"
+#include <librealsense2/rs.hpp>
+#include <state.hpp>
+#include <flags.hpp>
 #include "app.h"
-
-
-#include "pose_detector_flags.hpp"
+#include "calibration.hpp"
 
 bool fexists(const std::string& filename) {
 	std::ifstream ifile(filename.c_str());
@@ -25,27 +22,40 @@ bool ParseAndCheckCommandLine(int argc, char* argv[]) {
 
 	std::cout << "Parsing input parameters" << std::endl;
 
-	if (FLAGS_i.empty()) {
-		throw std::logic_error("Parameter -i is not set");
-	}
-
-	if (FLAGS_m.empty()) {
-		throw std::logic_error("Parameter -m is not set");
-	}
-
 	return true;
 }
 
 
 int main(int argc, char* argv[])
 {
-	
+	int TRACKING_MODE = 0;
+	int CALIBRATION_MODE = 1;
+	int MODE = 0;
+
 	try {
 		if (!ParseAndCheckCommandLine(argc, argv)) {
 			return EXIT_SUCCESS;
 		}
-		human_pose_estimation::pose_detector estimator(FLAGS_m, FLAGS_d, FLAGS_pc_msg);
 
+#pragma region states initializations
+		CaptureStateManager capture_state;
+
+		struct Visitor
+		{
+			void operator()(TrackingState *  t)
+			{
+				cout<< " in tracking state "<< endl;
+			}
+			void operator()(CalibrationState * c)
+			{
+				cout << " in calibration state " << endl;
+			}
+		};
+
+		std::variant<TrackingState * , CalibrationState * > v = capture_state.get_current_state<std::variant<TrackingState, CalibrationState>>();
+		std::visit(Visitor{}, v);
+
+#pragma endregion
 #pragma region capture_initializations
 		Capture capture;
 		rs2::context ctx;
@@ -65,6 +75,7 @@ int main(int argc, char* argv[])
 			capture.enable_device(dev);
 		}
 
+		// Align to color frame
 		capture.set_alignment(1);
 
 		bool frame_available = false;
@@ -77,117 +88,121 @@ int main(int argc, char* argv[])
 		vector<rs2_intrinsics> intrinsics = capture.get_cameras_intrinsics();
 		const rs2_intrinsics * camera_intrinsics = &intrinsics[0];
 
+		cout << "intrinsics from realsense camera..." << endl;
+		auto principal_point = std::make_pair(camera_intrinsics->ppx, camera_intrinsics->ppy);
+		auto focal_length = std::make_pair(camera_intrinsics->fx, camera_intrinsics->fy);
+		rs2_distortion model = camera_intrinsics->model;
+
+		std::cout << "Principal Point         : " << principal_point.first << ", " << principal_point.second << std::endl;
+		std::cout << "Focal Length            : " << focal_length.first << ", " << focal_length.second << std::endl;
+		std::cout << "Distortion Model        : " << model << std::endl;
+		std::cout << "Distortion Coefficients : [" << camera_intrinsics->coeffs[0] << "," << camera_intrinsics->coeffs[1] << "," <<
+			camera_intrinsics->coeffs[2] << "," << camera_intrinsics->coeffs[3] << "," << camera_intrinsics->coeffs[4] << "]" << std::endl;
+
+
 #pragma endregion Here we initialize capture parameters and enable devices
 
-#pragma region plane_solver
+#pragma region opencv window
+		int width_first = 1920;
+		int height_first = 0;
 
-		PlaneSolver plane_solver;
-		PlaneSolver::plane_coefficient plane = { 0, 0, 0, 0 };
+		// define dimension of the second display
+		int width_second = 1920;
+		int height_second = 1080;
 
-#pragma endregion Initialization of PCL based plane solver object
+		// move the window to the second display 
+		// (assuming the two displays are top aligned)
+		cvNamedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
+		moveWindow("ProjectionWindow", width_first, height_first);
+		cvSetWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
 
-		int delay = 33;
-		double inferenceTime = 0.0;
+		// create target image
+		Mat detectionResized = Mat(Size(width_second, height_second), CV_8UC1);
+		Mat projection = Mat(Size(width_second, height_second), CV_8UC1);
+#pragma endregion
+#pragma region calibration parameters settings and calibration object instantiation
+		
+		Tinker::calibration calibration_manager;
 
-		const cv::Point2f absentKeypoint(-1.0f, -1.0f);
-		bool plane_found = false;
+		calibration_manager.setup_camera_calibration_parameters(cvSize(FLAGS_w, FLAGS_height), cvSize(640, 480), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
+		calibration_manager.setup_projector_calibration_parameters(cvSize(1920, 1080), FLAGS_ps, Size(4,5), 80, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 500, 250);
+		calibration_manager.set_projector_static_image_points();
+#pragma endregion
+#pragma region Capture and processing loop
+		int processing = 1;
+		do {
 
-		while (1) {
-			if (waitKey(1) == 113) break;
-			
-			// small d
-			if (waitKey(1) == 100) {
-				plane_solver.allow_data_gathering();
-			}
-
-			vector<PlaneSolver::position> detected_feet_positions;
 			auto list_of_framesets = capture.get_depth_and_color_frameset();
 
 			if (list_of_framesets.size() > 0) {
 				int size = list_of_framesets.size();
+
 				for (int i = 0; i < size; i++) {
-					double t1 = static_cast<double>(cv::getTickCount());
-
-					// Get pose estimates
-					std::vector<human_pose_estimation::HumanPose> poses = estimator.estimate(list_of_framesets[i].color_image);
-
-					if (poses.size() == 0) continue;
-
-					double t2 = static_cast<double>(cv::getTickCount());
-					if (inferenceTime == 0) {
-						inferenceTime = (t2 - t1) / cv::getTickFrequency() * 1000;
-					}
-					else {
-						inferenceTime = inferenceTime * 0.95 + 0.05 * (t2 - t1) / cv::getTickFrequency() * 1000;
-					}
-
-					// Rendering to the image
-					human_pose_estimation::renderHumanPose(poses, list_of_framesets[i].color_image);
-
-					for (human_pose_estimation::HumanPose const& pose : poses) {
-
-						if (pose.keypoints.size() == 0 || pose.keypoints[10] == absentKeypoint || pose.keypoints[13] == absentKeypoint) continue;
-
-						circle(list_of_framesets[i].color_image, cvPoint(pose.keypoints[10].x, pose.keypoints[10].y), 20, Scalar(255, 255, 255), CV_FILLED, 8, 0);
-						circle(list_of_framesets[i].color_image, cvPoint(pose.keypoints[13].x, pose.keypoints[13].y), 20, Scalar(255, 255, 255), CV_FILLED, 8, 0);
-
-						// get the node 3d position from camera.
-						float distance_r = capture.get_distance_at_pixel(pose.keypoints[10].x, pose.keypoints[10].y, (depth_frame) list_of_framesets[i].depth_frame);
-						float distance_l = capture.get_distance_at_pixel(pose.keypoints[13].x, pose.keypoints[13].y, (depth_frame) list_of_framesets[i].depth_frame);
+					vector<Point2f> pointBuf;
+					Mat view = list_of_framesets[i].color_image;
+					cv::cvtColor(view, view, CV_BGR2RGB);
 					
-						if (distance_r == 0 || distance_l == 0) continue;
-
-						float point3d_r[3];
-						float point3d_l[3];
-
-
-						const float pixel_r[2] = { pose.keypoints[10].x , pose.keypoints[10].y};
-						const float pixel_l[2] = { pose.keypoints[13].x , pose.keypoints[13].y };
+#pragma region circle detection
+					Mat gray;
+					cvtColor(view, gray, COLOR_BGR2GRAY);
+					medianBlur(gray, gray, 5);
 					
-						rs2_deproject_pixel_to_point(point3d_r, camera_intrinsics, pixel_r, distance_r);
-						rs2_deproject_pixel_to_point(point3d_l, camera_intrinsics, pixel_l, distance_l);
+#pragma endregion
 
-						cout << to_string(point3d_r[0]) + ", " + to_string(point3d_r[1]) + ", " + to_string(point3d_r[2]) << endl;
-						cout << to_string(point3d_l[0]) + ", " + to_string(point3d_l[1]) + ", " + to_string(point3d_l[2]) << endl;
+#pragma region Calibration
+					calibration_manager.calibrate_camera(view);
 
-						if (plane_solver.is_data_gathering_allowed()) {
-							plane_solver.obtain_positions_data(point3d_r[0], point3d_r[1], point3d_r[2]);
-						}
-
-						string log_position = to_string(point3d_r[0]) + ", " + to_string(point3d_r[1]) + ", " + to_string(point3d_r[2]);
-
-						cv::putText(list_of_framesets[i].color_image, log_position, cv::Point(16, 32),
-							cv::FONT_HERSHEY_COMPLEX, 0.8, cv::Scalar(255, 255, 255));
-
-						PlaneSolver::position right = { point3d_r[0] , point3d_r[1] , point3d_r[2] };
-						PlaneSolver::position left = { point3d_l[0] , point3d_l[1] , point3d_l[2] };
-
-						detected_feet_positions.push_back(right);
-						detected_feet_positions.push_back(left);
-
+					calibration_manager.draw_projector_pattern(view, projection);
+					calibration_manager.calibrate_projector(view);
+#pragma endregion
+#pragma region command keys
+					// Command keys
+					if (waitKey(1) == 113) {
+						// press 'q'
+						processing = 0;
+						break;
 					}
-					if (plane_found) {
-						vector<PlaneSolver::position> projected_points = plane_solver.project_positions_on_plane(plane, detected_feet_positions);
+					if (waitKey(1) == 99) {
+						// press 'c'
+						MODE = CALIBRATION_MODE;
+						cout << "going to calibration mode..." << endl;
+						calibration_manager.switch_to_calibration_mode();
 					}
+					if (waitKey(1) == 112) {
+						// press 'p'
+						cout << "[main] starting projector calibration " << endl;
+						calibration_manager.start_projector_calibration();
+					}
+#pragma endregion
 					
-					imshow(to_string(i), list_of_framesets[i].color_image);
+#pragma region Display result
+					
+
+					// Get 3D coordinates of projected circles in camera coordinate system.
+
+
+					// Get 3D coordinates of projected circles from board coordinates. Back projection
+
+					// computing the instrinsics of the projector because you have 3d points (the projected circles) in world coordinates, and their respective “projection” in projector “image” plane.
+
+					// Matrix decomposition to get K, R, T of projector
+
+					/*
+					Finally, we can start computing the extrinsics of the camera-projector (because basically we have 3d points in “world coordinates” (the board), 
+					which are the projected circles, and also their projection (2d points) in the camera image and projector “image”). 
+					This means you can use the standard stereo calibration routine in openCV
+					*/
+
+					// show image
+					imshow("My Window", view);
+					imshow("ProjectionWindow", projection);
+#pragma endregion
+
 				}
 			}
+		}while (processing == 1);
 
-			// small s
-			if (waitKey(1) == 115) {
-				plane = plane_solver.solve();
-				if (plane.a == 0 && plane.b == 0 && plane.c == 0 && plane.d == 0) {
-					// do nothing
-				}
-				else {
-					plane_found = true;
-					// Send data to receiving clients
-				}
-			}
-		}
-
-
+#pragma endregion Capture and processing loop
 	}
 	catch (std::exception& ex) {
 		std::cout << ex.what() << std::endl;
