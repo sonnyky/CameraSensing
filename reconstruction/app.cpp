@@ -13,7 +13,7 @@ using namespace rs2;
 
 
 // Constructor
-Capture::Capture()
+Capture::Capture():align_to_color(RS2_STREAM_COLOR)
 {
 	// Initialize
 	initialize();
@@ -28,6 +28,7 @@ Capture::~Capture()
 
 void Capture::initialize() {
 	
+	dec_filter.set_option(RS2_OPTION_FILTER_MAGNITUDE, 3);
 	initializeSensor();
 	cv::setMouseCallback("Color", mouseCallback, this);
 }
@@ -40,13 +41,9 @@ void Capture::run()
 {
 	while (true) {
 		update();
-		draw();
-		show();
+		
 		if (waitKey(1) == 99) {
-			vector<Point2f> pts_src, pts_dest;
-			pts_src.push_back(topLeftImage); pts_src.push_back(topRightImage); pts_src.push_back(bottomRightImage); pts_src.push_back(bottomLeftImage);
-			pts_dest.push_back(topLeft); pts_dest.push_back(topRight); pts_dest.push_back(bottomRight); pts_dest.push_back(bottomLeft);
-			calcHomographyMatrix(pts_src, pts_dest);
+			trigger = true;
 		}else if(waitKey(1) == 113) break;
 
 	}
@@ -57,8 +54,8 @@ inline void Capture::initializeSensor()
 {
 	
 	//Add desired streams to configuration
-	cfg.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_BGR8, 30);
-	m_pipeline.start(cfg);
+	//cfg.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_BGR8, 30);
+	m_pipeline.start();
 
 	
 	for (int i = 0; i < 30; i++)
@@ -67,9 +64,6 @@ inline void Capture::initializeSensor()
 		frames = m_pipeline.wait_for_frames();
 	}
 
-	estimate_point_cloud();
-
-	cout << "pcl data estimate finished" << endl;
 }
 
 // Initialize color image
@@ -83,6 +77,7 @@ void Capture::update()
 {
 	// Update Color
 	updateColor();
+	updateDepthWithPointCloud();
 }
 
 // Update Color
@@ -99,6 +94,24 @@ inline void Capture::updateColor()
 	// Display in a GUI
 	namedWindow("Display Image", WINDOW_AUTOSIZE);
 	imshow("Display Image", color);
+}
+
+inline void Capture::updateDepthWithPointCloud() {
+
+	frames = m_pipeline.wait_for_frames();
+	//Get each frame
+	rs2::frame depth_frame = frames.get_depth_frame();
+
+	if (trigger) {
+		rs2::frame filtered = depth_frame;
+		// Note the concatenation of output/input frame to build up a chain
+		filtered = dec_filter.process(filtered);
+		points = pc.calculate(filtered);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_points = points_to_pcl(points);
+
+		mesh_converter.estimate(pcl_points);
+		trigger = false;
+	}
 }
 
 
@@ -173,33 +186,28 @@ void Capture::doMouseCallback(int event, int x, int y, int flags) {
 
 }
 
-void Capture::setRangePoints(int topLeftX, int topLeftY, int topRightX, int topRightY, int bottomLeftX, int bottomLeftY, int bottomRightX, int bottomRightY) {
-	topLeft.x = topLeftX;
-	topLeft.y = topLeftY;
-	topRight.x = topRightX;
-	topRight.y = topRightY;
-	bottomLeft.x = bottomLeftX;
-	bottomLeft.y = bottomLeftY;
-	bottomRight.x = bottomRightX;
-	bottomRight.y = bottomRightY;
-	printf("Top left x : %f\n", topLeft.x);
-	printf("Top left y : %f\n", topLeft.y);
-	printf("Top right x : %f\n", topRight.x);
-	printf("Top right y : %f\n", topRight.y);
-	printf("Bottom left x : %f\n", bottomLeft.x);
-	printf("Bottom left y : %f\n", bottomLeft.y);
-	printf("Bottom right x : %f\n", bottomRight.x);
-	printf("Bottom right y : %f\n", bottomRight.y);
-}
-
-void Capture::estimate_point_cloud()
+void Capture::estimate_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 {
-	mesh_converter.estimate();
+	mesh_converter.estimate(cloud);
 }
 
-void Capture::calcHomographyMatrix(vector<Point2f> pts_src, vector<Point2f> pts_dest) {
-	printf("Calculating homography...\n Please redo clicking if the results are not as expected.\n Matrix will be output as text file.");
-	Mat h = findHomography(pts_src, pts_dest);
-	FileStorage file("homography.xml", 1, "UTF-8");
-	file <<"Homography" << h;
+pcl_ptr Capture::points_to_pcl(const rs2::points & points)
+{
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+
+	auto sp = points.get_profile().as<rs2::video_stream_profile>();
+	cloud->width = sp.width();
+	cloud->height = sp.height();
+	cloud->is_dense = false;
+	cloud->points.resize(points.size());
+	auto ptr = points.get_vertices();
+	for (auto& p : cloud->points)
+	{
+		p.x = ptr->x;
+		p.y = ptr->y;
+		p.z = ptr->z;
+		ptr++;
+	}
+
+	return cloud;
 }

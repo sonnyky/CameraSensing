@@ -28,6 +28,9 @@
 
 #include "pcl_to_mesh.h"
 
+using pcl_ptr = pcl::PointCloud<pcl::PointXYZ>::Ptr;
+
+
 using namespace Microsoft::WRL;
 using namespace cv;
 using namespace std;
@@ -55,11 +58,13 @@ public:
 	~Capture();
 	void run();
 
-	// Calibration functions
-	void calcHomographyMatrix(vector<Point2f> pts_src, vector<Point2f> pts_dest);
-	void setRangePoints(int topLeftX, int topLeftY, int topRightX, int topRightY, int bottomLeftX, int bottomLeftY, int bottomRightX, int bottomRightY);
+	void estimate_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
-	void estimate_point_cloud();
+	bool trigger = false;
+
+	pcl_ptr points_to_pcl(const rs2::points& points);
+	rs2::align align_to_color;
+	rs2::decimation_filter dec_filter;
 
 private :
 	void initialize();
@@ -72,10 +77,16 @@ private :
 	// Drawing functions
 	void update();
 	inline void updateColor();
+	inline void updateDepthWithPointCloud();
 	void draw();
 	inline void drawColor();
 	void show();
 	inline void showColor();
+
+	// Declare pointcloud object, for calculating pointclouds and texture mappings
+	rs2::pointcloud pc;
+	// We want the points object to be persistent so we can display the last cloud when a frame drops
+	rs2::points points;
 
 	// Input functions
 	static void mouseCallback(int event, int x, int y, int flags, void* userdata);

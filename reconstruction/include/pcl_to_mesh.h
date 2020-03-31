@@ -18,7 +18,7 @@ namespace Tinker {
 		pcl_to_mesh();
 		~pcl_to_mesh();
 
-		void estimate();
+		void estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 	private:
 	};
