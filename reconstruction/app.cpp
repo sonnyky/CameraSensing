@@ -109,7 +109,15 @@ inline void Capture::updateDepthWithPointCloud() {
 		points = pc.calculate(filtered);
 		pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_points = points_to_pcl(points);
 
-		mesh_converter.estimate(pcl_points);
+		// Remove far points
+		pcl_ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::PassThrough<pcl::PointXYZ> pass;
+		pass.setInputCloud(pcl_points);
+		pass.setFilterFieldName("z");
+		pass.setFilterLimits(0.0, 1.0);
+		pass.filter(*cloud_filtered);
+
+		mesh_converter.estimate(cloud_filtered);
 		trigger = false;
 	}
 }
