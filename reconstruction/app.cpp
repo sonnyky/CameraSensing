@@ -28,7 +28,7 @@ Capture::~Capture()
 
 void Capture::initialize() {
 	
-	dec_filter.set_option(RS2_OPTION_FILTER_MAGNITUDE, 3);
+	dec_filter.set_option(RS2_OPTION_FILTER_MAGNITUDE, 5);
 	initializeSensor();
 	cv::setMouseCallback("Color", mouseCallback, this);
 }
