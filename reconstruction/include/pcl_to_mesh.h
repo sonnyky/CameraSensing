@@ -35,16 +35,21 @@ namespace Tinker {
 		pcl_to_mesh();
 		~pcl_to_mesh();
 
-		void estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+		void estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, string fileName, bool useFile = false);
 		void pairAlign(const PointCloud::Ptr cloud_src, const PointCloud::Ptr cloud_tgt, PointCloud::Ptr output, Eigen::Matrix4f &final_transform, bool downsample = false);
 
 		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud1;
 		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud2;
+		pcl::PointCloud<pcl::PointXYZ>::Ptr aligned_cloud;
 
-		void add_to_cloud1();
-		void add_to_cloud2();
+		void add_to_cloud1(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+		void add_to_cloud2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 		void align_and_save_clouds();
 		void generate_mesh_from_file();
+
+		void continuous_scan_store_aligned_as_cloud1();
+
+		Eigen::Matrix4f GlobalTransform;
 	private:
 	};
 

@@ -1,7 +1,11 @@
 #include "pcl_to_mesh.h"
 
 
-Tinker::pcl_to_mesh::pcl_to_mesh():cloud1(new pcl::PointCloud<pcl::PointXYZ>), cloud2(new pcl::PointCloud<pcl::PointXYZ>)
+Tinker::pcl_to_mesh::pcl_to_mesh():
+	cloud1(new pcl::PointCloud<pcl::PointXYZ>), 
+	cloud2(new pcl::PointCloud<pcl::PointXYZ>), 
+	aligned_cloud(new pcl::PointCloud<pcl::PointXYZ>),
+	GlobalTransform(Eigen::Matrix4f::Identity())
 {
 }
 
@@ -9,19 +13,19 @@ Tinker::pcl_to_mesh::~pcl_to_mesh()
 {
 }
 
-// Estimate normals
-void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, string fileName, bool useFile)
 {
-	/*pcl::PCLPointCloud2 cloud_blob;
-	pcl::io::loadPCDFile("bun.pcd", cloud_blob);
-	pcl::fromPCLPointCloud2(cloud_blob, *cloud);*/
-	//* the data should be available in cloud
+	if (useFile) {
+		pcl::PCLPointCloud2 cloud_blob;
+		pcl::io::loadPCDFile(fileName, cloud_blob);
+		pcl::fromPCLPointCloud2(cloud_blob, *cloud);
+	}
+
 	cout << "Size of cloud : " << cloud->size() << endl;
 
 	cout << "loading finished" << endl;
 	if (cloud->size() == 0) return;
 	
-
 	// Normal estimation*
 	pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
 	pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
@@ -57,7 +61,10 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 
 	// Set typical values for the parameters
 	gp3.setMu(2.5);
-	gp3.setMaximumNearestNeighbors(200);
+	int baseVal = 100;
+	int val = baseVal + ((cloud->size()/60000) * 100);
+	cout << "value of maximum nearest neighbors : " << val << endl;
+	gp3.setMaximumNearestNeighbors(val);
 	gp3.setMaximumSurfaceAngle(M_PI / 4); // 45 degrees
 	gp3.setMinimumAngle(M_PI / 18); // 10 degrees
 	gp3.setMaximumAngle(2 * M_PI / 3); // 120 degrees
@@ -84,6 +91,8 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	PointCloud::Ptr src(new PointCloud);
 	PointCloud::Ptr tgt(new PointCloud);
 	pcl::VoxelGrid<PointT> grid;
+	cout << "Size of cloud1 in pairAlign: " << cloud1->size() << endl;
+	cout << "Size of cloud2 in pairAlign: " << cloud2->size() << endl;
 	if (downsample)
 	{
 		grid.setLeafSize(0.05, 0.05, 0.05);
@@ -92,11 +101,13 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 
 		grid.setInputCloud(cloud_tgt);
 		grid.filter(*tgt);
+		cout << "downsampled.." << endl;
 	}
 	else
 	{
 		src = cloud_src;
 		tgt = cloud_tgt;
+		cout << "not downsampled.." << endl;
 	}
 
 
@@ -117,13 +128,15 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	norm_est.compute(*points_with_normals_tgt);
 	pcl::copyPointCloud(*tgt, *points_with_normals_tgt);
 
+	cout << "Compute surface normals and curvature.." << endl;
+
 	//
 	// Instantiate our custom point representation (defined above) ...
 	MyPointRepresentation point_representation;
 	// ... and weight the 'curvature' dimension so that it is balanced against x, y, and z
 	float alpha[4] = { 1.0, 1.0, 1.0, 1.0 };
 	point_representation.setRescaleValues(alpha);
-
+	cout << "setRescaleValues.." << endl;
 	//
 	// Align
 	pcl::IterativeClosestPointNonLinear<PointNormalT, PointNormalT> reg;
@@ -137,7 +150,7 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	reg.setInputSource(points_with_normals_src);
 	reg.setInputTarget(points_with_normals_tgt);
 
-
+	cout << "Align.." << endl;
 
 	//
 	// Run the same optimization in a loop and visualize the results
@@ -179,4 +192,47 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	*output += *cloud_src;
 
 	final_transform = targetToSource;
+}
+
+void Tinker::pcl_to_mesh::add_to_cloud1(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+	cloud1->clear();
+	pcl::copyPointCloud(*cloud, *cloud1);
+	cout << "Size of cloud1: " << cloud1->size() << endl;
+}
+
+void Tinker::pcl_to_mesh::add_to_cloud2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+	cloud2->clear();
+	pcl::copyPointCloud(*cloud, *cloud2);
+	cout << "Size of cloud2: " << cloud2->size() << endl;
+}
+
+void Tinker::pcl_to_mesh::align_and_save_clouds()
+{
+	cout << "starting aligning process" << endl;
+	aligned_cloud->clear();
+
+	cout << "defining transform matrices" << endl;
+	Eigen::Matrix4f pairTransform;
+
+	cout << "Running align algorithm" << endl;
+	pairAlign(cloud1, cloud2, aligned_cloud, pairTransform, true);
+
+	GlobalTransform *= pairTransform;
+
+	pcl::io::savePCDFile("aligned.pcd", *aligned_cloud, true);
+	generate_mesh_from_file();
+}
+
+void Tinker::pcl_to_mesh::generate_mesh_from_file()
+{
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+	estimate(cloud, "aligned.pcd", true);
+}
+
+void Tinker::pcl_to_mesh::continuous_scan_store_aligned_as_cloud1()
+{
+	pcl::copyPointCloud(*aligned_cloud, *cloud1);
+	align_and_save_clouds();
 }

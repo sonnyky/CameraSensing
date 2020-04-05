@@ -44,7 +44,33 @@ void Capture::run()
 		
 		if (waitKey(1) == 99) {
 			trigger = true;
-		}else if(waitKey(1) == 113) break;
+		}
+		else if (waitKey(1) == 111) {
+			// o key
+			add_first_cloud();
+		}
+		else if (waitKey(1) == 116) {
+			// t key
+			add_second_cloud();
+		}
+		else if (waitKey(1) == 97) {
+			// a key
+			align_clouds();
+		}
+		else if (waitKey(1) == 98) {
+			// b key
+			cout << "b pressed!" << endl;
+			prevTimeStamp = clock();
+			cur_frame = 0;
+			continuousScanning = true;
+		}
+		else if (waitKey(1) == 103) {
+			// g key
+			test_generate_mesh_aligned();
+		}
+		else if (waitKey(1) == 113) {
+			break;
+		}
 
 	}
 }
@@ -78,6 +104,7 @@ void Capture::update()
 	// Update Color
 	updateColor();
 	updateDepthWithPointCloud();
+	align_clouds_continuous();
 }
 
 // Update Color
@@ -90,7 +117,7 @@ inline void Capture::updateColor()
 
 	// Creating OpenCV Matrix from a color image
 	Mat color(Size(640, 480), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
-
+	cvtColor(color, color, COLOR_BGR2RGB);
 	// Display in a GUI
 	namedWindow("Display Image", WINDOW_AUTOSIZE);
 	imshow("Display Image", color);
@@ -117,7 +144,7 @@ inline void Capture::updateDepthWithPointCloud() {
 		pass.setFilterLimits(0.0, 1.0);
 		pass.filter(*cloud_filtered);
 
-		mesh_converter.estimate(cloud_filtered);
+		mesh_converter.estimate(cloud_filtered, "", false);
 		trigger = false;
 	}
 }
@@ -194,9 +221,9 @@ void Capture::doMouseCallback(int event, int x, int y, int flags) {
 
 }
 
-void Capture::estimate_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+void Capture::estimate_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, string fileName, bool useFile)
 {
-	mesh_converter.estimate(cloud);
+	mesh_converter.estimate(cloud, fileName, useFile);
 }
 
 pcl_ptr Capture::points_to_pcl(const rs2::points & points)
@@ -218,4 +245,81 @@ pcl_ptr Capture::points_to_pcl(const rs2::points & points)
 	}
 
 	return cloud;
+}
+
+void Capture::add_first_cloud()
+{
+	frames = m_pipeline.wait_for_frames();
+	//Get each frame
+	rs2::frame depth_frame = frames.get_depth_frame();
+
+	rs2::frame filtered = depth_frame;
+	// Note the concatenation of output/input frame to build up a chain
+	filtered = dec_filter.process(filtered);
+	points = pc.calculate(filtered);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_points = points_to_pcl(points);
+
+	// Remove far points
+	pcl_ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::PassThrough<pcl::PointXYZ> pass;
+	pass.setInputCloud(pcl_points);
+	pass.setFilterFieldName("z");
+	pass.setFilterLimits(0.0, 1.0);
+	pass.filter(*cloud_filtered);
+
+	mesh_converter.add_to_cloud1(cloud_filtered);
+		
+}
+
+void Capture::add_second_cloud()
+{
+
+	frames = m_pipeline.wait_for_frames();
+	//Get each frame
+	rs2::frame depth_frame = frames.get_depth_frame();
+
+	rs2::frame filtered = depth_frame;
+	// Note the concatenation of output/input frame to build up a chain
+	filtered = dec_filter.process(filtered);
+	points = pc.calculate(filtered);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_points = points_to_pcl(points);
+
+	// Remove far points
+	pcl_ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::PassThrough<pcl::PointXYZ> pass;
+	pass.setInputCloud(pcl_points);
+	pass.setFilterFieldName("z");
+	pass.setFilterLimits(0.0, 1.0);
+	pass.filter(*cloud_filtered);
+
+	mesh_converter.add_to_cloud2(cloud_filtered);
+}
+
+void Capture::align_clouds()
+{
+	mesh_converter.align_and_save_clouds();
+}
+
+void Capture::test_generate_mesh_aligned()
+{
+	mesh_converter.generate_mesh_from_file();
+}
+
+void Capture::align_clouds_continuous()
+{
+	if (!continuousScanning) return;
+
+	//Must align once first to prepare data
+
+	if (cur_frame <= max_frames && (clock() - prevTimeStamp > CLOCKS_PER_SEC)) {
+		cur_frame++;
+		cout << "scanning..." << endl;
+		add_second_cloud();
+		mesh_converter.continuous_scan_store_aligned_as_cloud1();
+		prevTimeStamp = clock();
+	}
+	if (cur_frame > max_frames) {
+		continuousScanning = false;
+	}
+	
 }
