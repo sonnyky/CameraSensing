@@ -58,13 +58,26 @@ public:
 	~Capture();
 	void run();
 
-	void estimate_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+	void estimate_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, string fileName, bool useFile = false);
 
 	bool trigger = false;
 
 	pcl_ptr points_to_pcl(const rs2::points& points);
 	rs2::align align_to_color;
 	rs2::decimation_filter dec_filter;
+
+	void add_first_cloud();
+	void add_second_cloud();
+	void align_clouds();
+	void test_generate_mesh_aligned();
+
+	bool continuousScanning = false;
+	void align_clouds_continuous();
+
+	int max_frames = 3;
+	int cur_frame = 0;
+	clock_t prevTimeStamp;
+	int time_diff = 1000;
 
 private :
 	void initialize();
