@@ -28,7 +28,7 @@ Capture::~Capture()
 
 void Capture::initialize() {
 	
-	dec_filter.set_option(RS2_OPTION_FILTER_MAGNITUDE, 5);
+	dec_filter.set_option(RS2_OPTION_FILTER_MAGNITUDE, 3);
 	initializeSensor();
 	cv::setMouseCallback("Color", mouseCallback, this);
 }
@@ -141,7 +141,7 @@ inline void Capture::updateDepthWithPointCloud() {
 		pcl::PassThrough<pcl::PointXYZ> pass;
 		pass.setInputCloud(pcl_points);
 		pass.setFilterFieldName("z");
-		pass.setFilterLimits(0.0, 1.0);
+		pass.setFilterLimits(0.0, 4.0);
 		pass.filter(*cloud_filtered);
 
 		mesh_converter.estimate(cloud_filtered, "", false);
@@ -264,7 +264,7 @@ void Capture::add_first_cloud()
 	pcl::PassThrough<pcl::PointXYZ> pass;
 	pass.setInputCloud(pcl_points);
 	pass.setFilterFieldName("z");
-	pass.setFilterLimits(0.0, 1.0);
+	pass.setFilterLimits(0.0, 4.0);
 	pass.filter(*cloud_filtered);
 
 	mesh_converter.add_to_cloud1(cloud_filtered);
@@ -289,7 +289,7 @@ void Capture::add_second_cloud()
 	pcl::PassThrough<pcl::PointXYZ> pass;
 	pass.setInputCloud(pcl_points);
 	pass.setFilterFieldName("z");
-	pass.setFilterLimits(0.0, 1.0);
+	pass.setFilterLimits(0.0, 4.0);
 	pass.filter(*cloud_filtered);
 
 	mesh_converter.add_to_cloud2(cloud_filtered);

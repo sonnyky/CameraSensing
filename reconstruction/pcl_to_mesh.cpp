@@ -79,7 +79,7 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	std::vector<int> parts = gp3.getPartIDs();
 	std::vector<int> states = gp3.getPointStates();
 
-	pcl::io::saveVTKFile("mesh.vtk", triangles);
+	pcl::io::saveOBJFile("mesh.obj", triangles);
 
 }
 
@@ -143,7 +143,7 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	reg.setTransformationEpsilon(1e-6);
 	// Set the maximum distance between two correspondences (src<->tgt) to 10cm
 	// Note: adjust this based on the size of your datasets
-	reg.setMaxCorrespondenceDistance(0.1);
+	reg.setMaxCorrespondenceDistance(0.2);
 	// Set the point representation
 	reg.setPointRepresentation(boost::make_shared<const MyPointRepresentation>(point_representation));
 
