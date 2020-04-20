@@ -79,6 +79,8 @@ public:
 	clock_t prevTimeStamp;
 	int time_diff = 1000;
 
+	void setup_capture_parameters();
+
 private :
 	void initialize();
 	void finalize();
@@ -95,6 +97,11 @@ private :
 	inline void drawColor();
 	void show();
 	inline void showColor();
+
+	int rs_filter_magnitude = 3;
+	float dist_limit_min = 0.0;
+	float dist_limit_max = 4.0;
+	string filter_field_name = "z";
 
 	// Declare pointcloud object, for calculating pointclouds and texture mappings
 	rs2::pointcloud pc;

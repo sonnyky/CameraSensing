@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<params>
+
+ <capture_params>
+  <filter_magnitude>3</filter_magnitude>
+  <dist_limit_min>0.0</dist_limit_min>
+  <dist_limit_max>4.0</dist_limit_max>
+  <filter_field_name>z</filter_field_name>
+ </capture_params>
+
+ <reconstruction_params>
+  <k_search_param>20</k_search_param>
+  <search_radius>0.025</search_radius>
+  <mu>2.5</mu>
+  <max_nearest_neighbour>100</max_nearest_neighbour>
+  <cloud_size_limit>60000</cloud_size_limit>
+
+ </reconstruction_params>
+
+
+</params>

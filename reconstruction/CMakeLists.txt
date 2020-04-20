@@ -18,6 +18,15 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
+# GFLAGS
+set(gflags_DIR "D:/Libraries/gflags/install/lib/cmake/gflags")
+find_package(gflags REQUIRED)
+set(GFLAGS_INCLUDE "D:/Libraries/gflags/install/include")
+set(GFLAGS_LIB "D:/Libraries/gflags/install/lib/gflags_nothreads_static.lib")
+
+# PugiXML
+set(PUGI_DIR "D:/Libraries/pugixml-1.10/pugixml-1.10/src")
+
 # Realsense SDK
 set(RealsenseSDK_ROOT "D:/Workspace/librealsense")
 set(RealsenseSDK_INCLUDE ${RealsenseSDK_ROOT}/include) #currently hardcoding for Release x64
@@ -31,6 +40,8 @@ set (ADDITIONAL_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 include_directories(${ADDITIONAL_INCLUDE})
 include_directories(${RealsenseSDK_INCLUDE})
+include_directories(${GFLAGS_INCLUDE})
+include_directories(${PUGI_DIR})
 
 
 # If the package has been found, several variables will
@@ -48,8 +59,8 @@ if(CMAKE_VERSION VERSION_LESS "2.8.11")
 endif()
 
 # Declare the executable target built from your sources
-set(SOURCES main.cpp app.cpp pcl_to_mesh.cpp ${ADDITIONAL_INCLUDE}/app.h ${ADDITIONAL_INCLUDE}/util.h ${ADDITIONAL_INCLUDE}/pcl_to_mesh.h)
+set(SOURCES main.cpp app.cpp pcl_to_mesh.cpp ${PUGI_DIR}/pugixml.cpp ${ADDITIONAL_INCLUDE}/app.h ${ADDITIONAL_INCLUDE}/util.h ${ADDITIONAL_INCLUDE}/pcl_to_mesh.h)
 add_executable(reconstruction ${SOURCES} )
 
 # Link your application with OpenCV libraries
-target_link_libraries(reconstruction ${OpenCV_LIBS} ${RealsenseSDK_LIB} ${PCL_LIBRARIES})
+target_link_libraries(reconstruction ${OpenCV_LIBS} ${RealsenseSDK_LIB} ${PCL_LIBRARIES} ${GFLAGS_LIB})

@@ -15,7 +15,7 @@ using namespace rs2;
 // Constructor
 Capture::Capture():align_to_color(RS2_STREAM_COLOR)
 {
-	// Initialize
+	setup_capture_parameters();
 	initialize();
 }
 
@@ -26,9 +26,34 @@ Capture::~Capture()
 	finalize();
 }
 
+void Capture::setup_capture_parameters()
+{
+	cout << "Setting up capture parameters:" << endl;
+	pugi::xml_document doc;
+	pugi::xml_parse_result result = doc.load_file("parameters.xml");
+	cout << "Load result: " << result.description() << endl;
+
+	pugi::xpath_query query_filter_magnitude("/params/capture_params/filter_magnitude");
+	rs_filter_magnitude = stoi(query_filter_magnitude.evaluate_string(doc));
+
+	pugi::xpath_query query_dist_min("/params/capture_params/dist_limit_min");
+	dist_limit_min = stof(query_dist_min.evaluate_string(doc));
+
+	pugi::xpath_query query_dist_max("/params/capture_params/dist_limit_max");
+	dist_limit_max = stof(query_dist_max.evaluate_string(doc));
+
+	pugi::xpath_query query_field_name("/params/capture_params/filter_field_name");
+	filter_field_name = query_field_name.evaluate_string(doc);
+
+	cout << "filter magnitude : " << rs_filter_magnitude << endl;
+	cout << "dist_limit_min : " << dist_limit_min << endl;
+	cout << "dist_limit_max : " << dist_limit_max << endl;
+	cout << "filter_field_name : " << filter_field_name << endl;
+}
+
 void Capture::initialize() {
 	
-	dec_filter.set_option(RS2_OPTION_FILTER_MAGNITUDE, 3);
+	dec_filter.set_option(RS2_OPTION_FILTER_MAGNITUDE, rs_filter_magnitude);
 	initializeSensor();
 	cv::setMouseCallback("Color", mouseCallback, this);
 }
@@ -48,6 +73,14 @@ void Capture::run()
 		else if (waitKey(1) == 111) {
 			// o key
 			add_first_cloud();
+		}
+		else if (waitKey(1) == 112) {
+			// p key
+			setup_capture_parameters();
+		}
+		else if (waitKey(1) == 114) {
+			// r key
+			mesh_converter.setup_reconstruction_parameters();
 		}
 		else if (waitKey(1) == 116) {
 			// t key
@@ -140,8 +173,8 @@ inline void Capture::updateDepthWithPointCloud() {
 		pcl_ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::PassThrough<pcl::PointXYZ> pass;
 		pass.setInputCloud(pcl_points);
-		pass.setFilterFieldName("z");
-		pass.setFilterLimits(0.0, 4.0);
+		pass.setFilterFieldName(filter_field_name);
+		pass.setFilterLimits(dist_limit_min, dist_limit_max);
 		pass.filter(*cloud_filtered);
 
 		mesh_converter.estimate(cloud_filtered, "", false);
@@ -263,8 +296,8 @@ void Capture::add_first_cloud()
 	pcl_ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
 	pcl::PassThrough<pcl::PointXYZ> pass;
 	pass.setInputCloud(pcl_points);
-	pass.setFilterFieldName("z");
-	pass.setFilterLimits(0.0, 4.0);
+	pass.setFilterFieldName(filter_field_name);
+	pass.setFilterLimits(dist_limit_min, dist_limit_max);
 	pass.filter(*cloud_filtered);
 
 	mesh_converter.add_to_cloud1(cloud_filtered);
@@ -288,8 +321,8 @@ void Capture::add_second_cloud()
 	pcl_ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
 	pcl::PassThrough<pcl::PointXYZ> pass;
 	pass.setInputCloud(pcl_points);
-	pass.setFilterFieldName("z");
-	pass.setFilterLimits(0.0, 4.0);
+	pass.setFilterFieldName(filter_field_name);
+	pass.setFilterLimits(dist_limit_min, dist_limit_max);
 	pass.filter(*cloud_filtered);
 
 	mesh_converter.add_to_cloud2(cloud_filtered);

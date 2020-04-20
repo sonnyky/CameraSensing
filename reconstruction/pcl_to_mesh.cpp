@@ -22,8 +22,6 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	}
 
 	cout << "Size of cloud : " << cloud->size() << endl;
-
-	cout << "loading finished" << endl;
 	if (cloud->size() == 0) return;
 	
 	// Normal estimation*
@@ -33,7 +31,7 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	tree->setInputCloud(cloud);
 	n.setInputCloud(cloud);
 	n.setSearchMethod(tree);
-	n.setKSearch(20);
+	n.setKSearch(k_search_param);
 	n.compute(*normals);
 	//* normals should not contain the point normals + surface curvatures
 	cout << "estimation finished" << endl;
@@ -57,12 +55,11 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	cout << "object initialization finished" << endl;
 
 	// Set the maximum distance between connected points (maximum edge length)
-	gp3.setSearchRadius(0.025);
+	gp3.setSearchRadius(search_radius);
 
 	// Set typical values for the parameters
-	gp3.setMu(2.5);
-	int baseVal = 100;
-	int val = baseVal + ((cloud->size()/60000) * 100);
+	gp3.setMu(mu);
+	int val = max_nearest_neighbour + ((cloud->size()/cloud_size_limit) * max_nearest_neighbour);
 	cout << "value of maximum nearest neighbors : " << val << endl;
 	gp3.setMaximumNearestNeighbors(val);
 	gp3.setMaximumSurfaceAngle(M_PI / 4); // 45 degrees
@@ -235,4 +232,31 @@ void Tinker::pcl_to_mesh::continuous_scan_store_aligned_as_cloud1()
 {
 	pcl::copyPointCloud(*aligned_cloud, *cloud1);
 	align_and_save_clouds();
+}
+
+void Tinker::pcl_to_mesh::setup_reconstruction_parameters()
+{
+	pugi::xml_document doc;
+	pugi::xml_parse_result result = doc.load_file("parameters.xml");
+	cout << "Load result: " << result.description() << endl;
+
+	pugi::xpath_query query_k_search("/params/reconstruction_params/k_search_param");
+	k_search_param = stoi(query_k_search.evaluate_string(doc));
+	cout << "k_search_param : " << k_search_param << endl;
+
+	pugi::xpath_query query_search_radius("/params/reconstruction_params/search_radius");
+	search_radius = stod(query_search_radius.evaluate_string(doc));
+	cout << "search_radius : " << search_radius << endl;
+
+	pugi::xpath_query query_mu("/params/reconstruction_params/mu");
+	mu = stod(query_mu.evaluate_string(doc));
+	cout << "mu : " << mu << endl;
+
+	pugi::xpath_query query_max_nearest_neighbour("/params/reconstruction_params/max_nearest_neighbour");
+	max_nearest_neighbour = stoi(query_max_nearest_neighbour.evaluate_string(doc));
+	cout << "max_nearest_neighbour : " << max_nearest_neighbour << endl;
+
+	pugi::xpath_query query_cloud_size_limit("/params/reconstruction_params/cloud_size_limit");
+	cloud_size_limit = stoi(query_cloud_size_limit.evaluate_string(doc));
+	cout << "cloud_size_limit : " << cloud_size_limit << endl;
 }
