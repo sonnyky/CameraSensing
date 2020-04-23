@@ -353,6 +353,7 @@ void Capture::align_clouds_continuous()
 	}
 	if (cur_frame > max_frames) {
 		continuousScanning = false;
+		cout << "enough frames!" << endl;
 	}
 	
 }

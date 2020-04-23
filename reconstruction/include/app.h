@@ -74,7 +74,7 @@ public:
 	bool continuousScanning = false;
 	void align_clouds_continuous();
 
-	int max_frames = 3;
+	int max_frames = 5;
 	int cur_frame = 0;
 	clock_t prevTimeStamp;
 	int time_diff = 1000;

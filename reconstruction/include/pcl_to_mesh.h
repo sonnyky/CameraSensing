@@ -48,6 +48,8 @@ namespace Tinker {
 		void add_to_cloud1(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 		void add_to_cloud2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 		void align_and_save_clouds();
+		void align_clouds();
+		void save_and_generate_mesh();
 		void generate_mesh_from_file();
 
 		void continuous_scan_store_aligned_as_cloud1();
@@ -61,6 +63,7 @@ namespace Tinker {
 		double mu = 2.5;
 		int max_nearest_neighbour = 100;
 		int cloud_size_limit = 60000;
+		double max_correspondence_distance = 0.1;
 	};
 
 

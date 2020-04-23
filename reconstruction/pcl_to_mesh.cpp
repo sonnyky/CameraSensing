@@ -76,7 +76,8 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	std::vector<int> parts = gp3.getPartIDs();
 	std::vector<int> states = gp3.getPointStates();
 
-	pcl::io::saveOBJFile("mesh.obj", triangles);
+	//pcl::io::saveOBJFile("mesh.obj", triangles);
+	pcl::io::saveVTKFile("mesh_test.vtk", triangles);
 
 }
 
@@ -140,7 +141,7 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	reg.setTransformationEpsilon(1e-6);
 	// Set the maximum distance between two correspondences (src<->tgt) to 10cm
 	// Note: adjust this based on the size of your datasets
-	reg.setMaxCorrespondenceDistance(0.2);
+	reg.setMaxCorrespondenceDistance(max_correspondence_distance);
 	// Set the point representation
 	reg.setPointRepresentation(boost::make_shared<const MyPointRepresentation>(point_representation));
 
@@ -153,8 +154,8 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	// Run the same optimization in a loop and visualize the results
 	Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity(), prev, targetToSource;
 	PointCloudWithNormals::Ptr reg_result = points_with_normals_src;
-	reg.setMaximumIterations(2);
-	for (int i = 0; i < 30; ++i)
+	reg.setMaximumIterations(3);
+	for (int i = 0; i < 70; ++i)
 	{
 		PCL_INFO("Iteration Nr. %d.\n", i);
 
@@ -222,6 +223,25 @@ void Tinker::pcl_to_mesh::align_and_save_clouds()
 	generate_mesh_from_file();
 }
 
+void Tinker::pcl_to_mesh::align_clouds()
+{
+	cout << "starting aligning process" << endl;
+	aligned_cloud->clear();
+
+	cout << "defining transform matrices" << endl;
+	Eigen::Matrix4f pairTransform;
+
+	cout << "Running align algorithm" << endl;
+	pairAlign(cloud1, cloud2, aligned_cloud, pairTransform, true);
+
+	GlobalTransform *= pairTransform;
+}
+
+void Tinker::pcl_to_mesh::save_and_generate_mesh() {
+	pcl::io::savePCDFile("aligned.pcd", *aligned_cloud, true);
+	generate_mesh_from_file();
+}
+
 void Tinker::pcl_to_mesh::generate_mesh_from_file()
 {
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -231,7 +251,7 @@ void Tinker::pcl_to_mesh::generate_mesh_from_file()
 void Tinker::pcl_to_mesh::continuous_scan_store_aligned_as_cloud1()
 {
 	pcl::copyPointCloud(*aligned_cloud, *cloud1);
-	align_and_save_clouds();
+	align_clouds();
 }
 
 void Tinker::pcl_to_mesh::setup_reconstruction_parameters()
@@ -259,4 +279,8 @@ void Tinker::pcl_to_mesh::setup_reconstruction_parameters()
 	pugi::xpath_query query_cloud_size_limit("/params/reconstruction_params/cloud_size_limit");
 	cloud_size_limit = stoi(query_cloud_size_limit.evaluate_string(doc));
 	cout << "cloud_size_limit : " << cloud_size_limit << endl;
+
+	pugi::xpath_query query_max_correspondence_distance("/params/reconstruction_params/align_max_corr_distance");
+	max_correspondence_distance = stod(query_max_correspondence_distance.evaluate_string(doc));
+	cout << "max_correspondence_distance : " << max_correspondence_distance << endl;
 }
