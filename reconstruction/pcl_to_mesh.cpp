@@ -23,6 +23,16 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 
 	cout << "Size of cloud : " << cloud->size() << endl;
 	if (cloud->size() == 0) return;
+
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+	pcl::copyPointCloud(*cloud_filtered, *cloud);
+
 	
 	// Normal estimation*
 	pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
@@ -138,7 +148,7 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	//
 	// Align
 	pcl::IterativeClosestPointNonLinear<PointNormalT, PointNormalT> reg;
-	reg.setTransformationEpsilon(1e-6);
+	reg.setTransformationEpsilon(1e-10);
 	// Set the maximum distance between two correspondences (src<->tgt) to 10cm
 	// Note: adjust this based on the size of your datasets
 	reg.setMaxCorrespondenceDistance(max_correspondence_distance);
@@ -150,52 +160,28 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 
 	cout << "Align.." << endl;
 
-	//
 	// Run the same optimization in a loop and visualize the results
-	Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity(), prev, targetToSource;
+	Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity(), prev, sourceToTarget;
 	PointCloudWithNormals::Ptr reg_result = points_with_normals_src;
-	reg.setMaximumIterations(70);
+	reg.setMaximumIterations(100);
+	reg.setRANSACOutlierRejectionThreshold(0.6);
 
 	// Estimate
 	reg.setInputSource(points_with_normals_src);
 	reg.align(*reg_result);
-	/*
-	for (int i = 0; i < 70; ++i)
-	{
-		PCL_INFO("Iteration Nr. %d.\n", i);
-
-		// save cloud for visualization purpose
-		points_with_normals_src = reg_result;
-
-		// Estimate
-		reg.setInputSource(points_with_normals_src);
-		reg.align(*reg_result);
-
-		//accumulate transformation between each Iteration
-		Ti = reg.getFinalTransformation() * Ti;
-
-		//if the difference between this transformation and the previous one
-		//is smaller than the threshold, refine the process by reducing
-		//the maximal correspondence distance
-		if (std::abs((reg.getLastIncrementalTransformation() - prev).sum()) < reg.getTransformationEpsilon())
-			reg.setMaxCorrespondenceDistance(reg.getMaxCorrespondenceDistance() - 0.001);
-
-		prev = reg.getLastIncrementalTransformation();
-	}
-	*/
-	//
+	
   // Get the transformation from target to source
 	Ti = reg.getFinalTransformation();
-	targetToSource = Ti.inverse();
+	sourceToTarget = Ti;
 
 	//
 	// Transform target back in source frame
-	pcl::transformPointCloud(*cloud_tgt, *output, targetToSource);
+	pcl::transformPointCloud(*cloud_src, *output, sourceToTarget);
 
 	//add the source to the transformed target
-	*output += *cloud_src;
+	*output += *cloud_tgt;
 
-	final_transform = targetToSource;
+	final_transform = sourceToTarget;
 	std::cout << "has converged:" << reg.hasConverged() << " score: " <<
 		reg.getFitnessScore() << std::endl;
 	cout << "final transformation : " << endl;
@@ -205,14 +191,32 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 void Tinker::pcl_to_mesh::add_to_cloud1(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 {
 	cloud1->clear();
-	pcl::copyPointCloud(*cloud, *cloud1);
+
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+
+	pcl::copyPointCloud(*cloud_filtered, *cloud1);
 	cout << "Size of cloud1: " << cloud1->size() << endl;
 }
 
 void Tinker::pcl_to_mesh::add_to_cloud2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 {
 	cloud2->clear();
-	pcl::copyPointCloud(*cloud, *cloud2);
+
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+
+	pcl::copyPointCloud(*cloud_filtered, *cloud2);
 	cout << "Size of cloud2: " << cloud2->size() << endl;
 }
 
@@ -227,26 +231,63 @@ void Tinker::pcl_to_mesh::align_and_save_clouds()
 	cout << "Running align algorithm" << endl;
 	pairAlign(cloud1, cloud2, aligned_cloud, pairTransform, true);
 
-	GlobalTransform *= pairTransform;
+	//GlobalTransform *= pairTransform;
 
 	pcl::io::savePCDFile("aligned.pcd", *aligned_cloud, true);
 	generate_mesh_from_file();
 }
 
+
+
 void Tinker::pcl_to_mesh::align_clouds()
 {
-	
+	PointCloud::Ptr temp(new PointCloud);
 	cout << "defining transform matrices" << endl;
 	Eigen::Matrix4f pairTransform;
 
 	cout << "Running align algorithm" << endl;
-	pairAlign(cloud1, cloud2, aligned_cloud, pairTransform, true);
+	pairAlign(cloud1, cloud2, temp, pairTransform, true);
 
-	GlobalTransform *= pairTransform;
+	if (pairTransform == Eigen::Matrix4f::Identity()) {
+		return; //failed to converge
+	}
+
+	//pcl::transformPointCloud(*temp, *aligned_cloud, GlobalTransform);
+
+	// set cloud 1 to be the aligned cloud
+	cloud1->clear();
+	pcl::copyPointCloud(*temp, *cloud1);
+	pcl::copyPointCloud(*cloud1, *aligned_cloud);
+	//string saveName = "aligned" + to_string(clock()) + ".pcd";
+	//pcl::io::savePCDFile(saveName, *aligned_cloud, true);
+	//GlobalTransform *= pairTransform;
+
+}
+
+void Tinker::pcl_to_mesh::clear_aligned_clouds()
+{
+	
+	aligned_cloud->clear();
 }
 
 void Tinker::pcl_to_mesh::save_and_generate_mesh() {
-	pcl::io::savePCDFile("aligned.pcd", *aligned_cloud, true);
+
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(aligned_cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+
+
+	pcl::PointCloud<pcl::PointXYZ>::Ptr output(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::VoxelGrid<pcl::PointXYZ> vox;
+	vox.setInputCloud(cloud_filtered);
+	vox.setLeafSize(0.01f, 0.01f, 0.01f);
+	vox.filter(*output);
+
+	pcl::io::savePCDFile("aligned.pcd", *output, true);
 	generate_mesh_from_file();
 }
 
@@ -258,7 +299,6 @@ void Tinker::pcl_to_mesh::generate_mesh_from_file()
 
 void Tinker::pcl_to_mesh::continuous_scan_store_aligned_as_cloud1()
 {
-	pcl::copyPointCloud(*aligned_cloud, *cloud1);
 	align_clouds();
 }
 

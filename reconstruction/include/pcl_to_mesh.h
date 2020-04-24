@@ -19,6 +19,9 @@
 #include <pcl/registration/icp.h>
 #include <pcl/registration/icp_nl.h>
 #include <pcl/registration/transforms.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/filters/crop_box.h>
+
 
 #include "pugixml.hpp";
 
@@ -49,6 +52,7 @@ namespace Tinker {
 		void add_to_cloud2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 		void align_and_save_clouds();
 		void align_clouds();
+		void clear_aligned_clouds();
 		void save_and_generate_mesh();
 		void generate_mesh_from_file();
 

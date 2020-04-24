@@ -77,7 +77,7 @@ public:
 	int max_frames = 5;
 	int cur_frame = 0;
 	clock_t prevTimeStamp;
-	int time_diff = 1000;
+	int time_diff = 2;
 
 	void setup_capture_parameters();
 
@@ -99,8 +99,14 @@ private :
 	inline void showColor();
 
 	int rs_filter_magnitude = 3;
+
+	// in meters
 	float dist_limit_min = 0.0;
 	float dist_limit_max = 4.0;
+	float x_limit_min = -1.0;
+	float x_limit_max = 1.0;
+	float y_limit_min = 0.0;
+	float y_limit_max = 1.0;
 	string filter_field_name = "z";
 
 	// Declare pointcloud object, for calculating pointclouds and texture mappings
