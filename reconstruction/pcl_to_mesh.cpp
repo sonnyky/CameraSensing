@@ -154,7 +154,12 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	// Run the same optimization in a loop and visualize the results
 	Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity(), prev, targetToSource;
 	PointCloudWithNormals::Ptr reg_result = points_with_normals_src;
-	reg.setMaximumIterations(3);
+	reg.setMaximumIterations(70);
+
+	// Estimate
+	reg.setInputSource(points_with_normals_src);
+	reg.align(*reg_result);
+	/*
 	for (int i = 0; i < 70; ++i)
 	{
 		PCL_INFO("Iteration Nr. %d.\n", i);
@@ -177,9 +182,10 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 
 		prev = reg.getLastIncrementalTransformation();
 	}
-
+	*/
 	//
   // Get the transformation from target to source
+	Ti = reg.getFinalTransformation();
 	targetToSource = Ti.inverse();
 
 	//
@@ -190,6 +196,10 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	*output += *cloud_src;
 
 	final_transform = targetToSource;
+	std::cout << "has converged:" << reg.hasConverged() << " score: " <<
+		reg.getFitnessScore() << std::endl;
+	cout << "final transformation : " << endl;
+	cout << reg.getFinalTransformation() <<endl;
 }
 
 void Tinker::pcl_to_mesh::add_to_cloud1(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
@@ -225,9 +235,7 @@ void Tinker::pcl_to_mesh::align_and_save_clouds()
 
 void Tinker::pcl_to_mesh::align_clouds()
 {
-	cout << "starting aligning process" << endl;
-	aligned_cloud->clear();
-
+	
 	cout << "defining transform matrices" << endl;
 	Eigen::Matrix4f pairTransform;
 
