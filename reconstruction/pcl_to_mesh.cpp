@@ -22,9 +22,17 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	}
 
 	cout << "Size of cloud : " << cloud->size() << endl;
-
-	cout << "loading finished" << endl;
 	if (cloud->size() == 0) return;
+
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+	pcl::copyPointCloud(*cloud_filtered, *cloud);
+
 	
 	// Normal estimation*
 	pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> n;
@@ -33,7 +41,7 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	tree->setInputCloud(cloud);
 	n.setInputCloud(cloud);
 	n.setSearchMethod(tree);
-	n.setKSearch(20);
+	n.setKSearch(k_search_param);
 	n.compute(*normals);
 	//* normals should not contain the point normals + surface curvatures
 	cout << "estimation finished" << endl;
@@ -57,12 +65,11 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	cout << "object initialization finished" << endl;
 
 	// Set the maximum distance between connected points (maximum edge length)
-	gp3.setSearchRadius(0.025);
+	gp3.setSearchRadius(search_radius);
 
 	// Set typical values for the parameters
-	gp3.setMu(2.5);
-	int baseVal = 100;
-	int val = baseVal + ((cloud->size()/60000) * 100);
+	gp3.setMu(mu);
+	int val = max_nearest_neighbour + ((cloud->size()/cloud_size_limit) * max_nearest_neighbour);
 	cout << "value of maximum nearest neighbors : " << val << endl;
 	gp3.setMaximumNearestNeighbors(val);
 	gp3.setMaximumSurfaceAngle(M_PI / 4); // 45 degrees
@@ -79,7 +86,8 @@ void Tinker::pcl_to_mesh::estimate(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
 	std::vector<int> parts = gp3.getPartIDs();
 	std::vector<int> states = gp3.getPointStates();
 
-	pcl::io::saveOBJFile("mesh.obj", triangles);
+	//pcl::io::saveOBJFile("mesh.obj", triangles);
+	pcl::io::saveVTKFile("mesh_test.vtk", triangles);
 
 }
 
@@ -140,10 +148,10 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 	//
 	// Align
 	pcl::IterativeClosestPointNonLinear<PointNormalT, PointNormalT> reg;
-	reg.setTransformationEpsilon(1e-6);
+	reg.setTransformationEpsilon(1e-10);
 	// Set the maximum distance between two correspondences (src<->tgt) to 10cm
 	// Note: adjust this based on the size of your datasets
-	reg.setMaxCorrespondenceDistance(0.2);
+	reg.setMaxCorrespondenceDistance(max_correspondence_distance);
 	// Set the point representation
 	reg.setPointRepresentation(boost::make_shared<const MyPointRepresentation>(point_representation));
 
@@ -152,59 +160,63 @@ void Tinker::pcl_to_mesh::pairAlign(const PointCloud::Ptr cloud_src, const Point
 
 	cout << "Align.." << endl;
 
-	//
 	// Run the same optimization in a loop and visualize the results
-	Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity(), prev, targetToSource;
+	Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity(), prev, sourceToTarget;
 	PointCloudWithNormals::Ptr reg_result = points_with_normals_src;
-	reg.setMaximumIterations(2);
-	for (int i = 0; i < 30; ++i)
-	{
-		PCL_INFO("Iteration Nr. %d.\n", i);
+	reg.setMaximumIterations(100);
+	reg.setRANSACOutlierRejectionThreshold(0.6);
 
-		// save cloud for visualization purpose
-		points_with_normals_src = reg_result;
-
-		// Estimate
-		reg.setInputSource(points_with_normals_src);
-		reg.align(*reg_result);
-
-		//accumulate transformation between each Iteration
-		Ti = reg.getFinalTransformation() * Ti;
-
-		//if the difference between this transformation and the previous one
-		//is smaller than the threshold, refine the process by reducing
-		//the maximal correspondence distance
-		if (std::abs((reg.getLastIncrementalTransformation() - prev).sum()) < reg.getTransformationEpsilon())
-			reg.setMaxCorrespondenceDistance(reg.getMaxCorrespondenceDistance() - 0.001);
-
-		prev = reg.getLastIncrementalTransformation();
-	}
-
-	//
+	// Estimate
+	reg.setInputSource(points_with_normals_src);
+	reg.align(*reg_result);
+	
   // Get the transformation from target to source
-	targetToSource = Ti.inverse();
+	Ti = reg.getFinalTransformation();
+	sourceToTarget = Ti;
 
 	//
 	// Transform target back in source frame
-	pcl::transformPointCloud(*cloud_tgt, *output, targetToSource);
+	pcl::transformPointCloud(*cloud_src, *output, sourceToTarget);
 
 	//add the source to the transformed target
-	*output += *cloud_src;
+	*output += *cloud_tgt;
 
-	final_transform = targetToSource;
+	final_transform = sourceToTarget;
+	std::cout << "has converged:" << reg.hasConverged() << " score: " <<
+		reg.getFitnessScore() << std::endl;
+	cout << "final transformation : " << endl;
+	cout << reg.getFinalTransformation() <<endl;
 }
 
 void Tinker::pcl_to_mesh::add_to_cloud1(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 {
 	cloud1->clear();
-	pcl::copyPointCloud(*cloud, *cloud1);
+
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+
+	pcl::copyPointCloud(*cloud_filtered, *cloud1);
 	cout << "Size of cloud1: " << cloud1->size() << endl;
 }
 
 void Tinker::pcl_to_mesh::add_to_cloud2(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 {
 	cloud2->clear();
-	pcl::copyPointCloud(*cloud, *cloud2);
+
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+
+	pcl::copyPointCloud(*cloud_filtered, *cloud2);
 	cout << "Size of cloud2: " << cloud2->size() << endl;
 }
 
@@ -219,9 +231,63 @@ void Tinker::pcl_to_mesh::align_and_save_clouds()
 	cout << "Running align algorithm" << endl;
 	pairAlign(cloud1, cloud2, aligned_cloud, pairTransform, true);
 
-	GlobalTransform *= pairTransform;
+	//GlobalTransform *= pairTransform;
 
 	pcl::io::savePCDFile("aligned.pcd", *aligned_cloud, true);
+	generate_mesh_from_file();
+}
+
+
+
+void Tinker::pcl_to_mesh::align_clouds()
+{
+	PointCloud::Ptr temp(new PointCloud);
+	cout << "defining transform matrices" << endl;
+	Eigen::Matrix4f pairTransform;
+
+	cout << "Running align algorithm" << endl;
+	pairAlign(cloud1, cloud2, temp, pairTransform, true);
+
+	if (pairTransform == Eigen::Matrix4f::Identity()) {
+		return; //failed to converge
+	}
+
+	//pcl::transformPointCloud(*temp, *aligned_cloud, GlobalTransform);
+
+	// set cloud 1 to be the aligned cloud
+	cloud1->clear();
+	pcl::copyPointCloud(*temp, *cloud1);
+	pcl::copyPointCloud(*cloud1, *aligned_cloud);
+	//string saveName = "aligned" + to_string(clock()) + ".pcd";
+	//pcl::io::savePCDFile(saveName, *aligned_cloud, true);
+	//GlobalTransform *= pairTransform;
+
+}
+
+void Tinker::pcl_to_mesh::clear_aligned_clouds()
+{
+	
+	aligned_cloud->clear();
+}
+
+void Tinker::pcl_to_mesh::save_and_generate_mesh() {
+
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(aligned_cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+
+
+	pcl::PointCloud<pcl::PointXYZ>::Ptr output(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::VoxelGrid<pcl::PointXYZ> vox;
+	vox.setInputCloud(cloud_filtered);
+	vox.setLeafSize(0.01f, 0.01f, 0.01f);
+	vox.filter(*output);
+
+	pcl::io::savePCDFile("aligned.pcd", *output, true);
 	generate_mesh_from_file();
 }
 
@@ -233,6 +299,36 @@ void Tinker::pcl_to_mesh::generate_mesh_from_file()
 
 void Tinker::pcl_to_mesh::continuous_scan_store_aligned_as_cloud1()
 {
-	pcl::copyPointCloud(*aligned_cloud, *cloud1);
-	align_and_save_clouds();
+	align_clouds();
+}
+
+void Tinker::pcl_to_mesh::setup_reconstruction_parameters()
+{
+	pugi::xml_document doc;
+	pugi::xml_parse_result result = doc.load_file("parameters.xml");
+	cout << "Load result: " << result.description() << endl;
+
+	pugi::xpath_query query_k_search("/params/reconstruction_params/k_search_param");
+	k_search_param = stoi(query_k_search.evaluate_string(doc));
+	cout << "k_search_param : " << k_search_param << endl;
+
+	pugi::xpath_query query_search_radius("/params/reconstruction_params/search_radius");
+	search_radius = stod(query_search_radius.evaluate_string(doc));
+	cout << "search_radius : " << search_radius << endl;
+
+	pugi::xpath_query query_mu("/params/reconstruction_params/mu");
+	mu = stod(query_mu.evaluate_string(doc));
+	cout << "mu : " << mu << endl;
+
+	pugi::xpath_query query_max_nearest_neighbour("/params/reconstruction_params/max_nearest_neighbour");
+	max_nearest_neighbour = stoi(query_max_nearest_neighbour.evaluate_string(doc));
+	cout << "max_nearest_neighbour : " << max_nearest_neighbour << endl;
+
+	pugi::xpath_query query_cloud_size_limit("/params/reconstruction_params/cloud_size_limit");
+	cloud_size_limit = stoi(query_cloud_size_limit.evaluate_string(doc));
+	cout << "cloud_size_limit : " << cloud_size_limit << endl;
+
+	pugi::xpath_query query_max_correspondence_distance("/params/reconstruction_params/align_max_corr_distance");
+	max_correspondence_distance = stod(query_max_correspondence_distance.evaluate_string(doc));
+	cout << "max_correspondence_distance : " << max_correspondence_distance << endl;
 }
