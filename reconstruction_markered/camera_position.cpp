@@ -31,7 +31,7 @@ inline void make_depth_histogram(const Mat &depth, Mat &color_depth) {
 		for (int j = 0; j < width; ++j) {
 			if (uint16_t d = depth.at<ushort>(i, j)) {
 				int f = histogram[d] * 255 / histogram[0xFFFF]; // 0-255 based on histogram location
-				color_depth.at<Vec3b>(i, j) = Vec3b(255 - f, 0,f);
+				color_depth.at<Vec3b>(i, j) = Vec3b(f, 0, 255 - f);
 			}
 			else {
 				color_depth.at<Vec3b>(i, j) = Vec3b(0, 5, 20);

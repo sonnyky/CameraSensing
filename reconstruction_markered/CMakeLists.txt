@@ -34,7 +34,7 @@ if(CMAKE_VERSION VERSION_LESS "2.8.11")
 endif()
 
 # Declare the executable target built from your sources
-set(SOURCES main.cpp app.cpp ${ADDITIONAL_INCLUDE}/app.h ${ADDITIONAL_INCLUDE}/util.h)
+set(SOURCES main.cpp app.cpp camera_position.cpp ${ADDITIONAL_INCLUDE}/app.h ${ADDITIONAL_INCLUDE}/util.h ${ADDITIONAL_INCLUDE}/camera_position.h)
 add_executable(reconstruction_markered ${SOURCES} )
 
 # Link your application with OpenCV libraries
