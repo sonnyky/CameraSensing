@@ -2,10 +2,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 # Define project name
-project(dynamic_projection)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+project(reconstruction_markered)
 
 # Set installation folder
 set (CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "default install path" FORCE )
@@ -13,11 +10,14 @@ set (CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "default inst
 # Set additional include folders
 set (ADDITIONAL_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-include_directories(${RealsenseSDK_INCLUDE})
-include_directories(${GFLAGS_INCLUDE})
-include_directories(${REALSENSE_CAPTURE_INCLUDE})
-
 include_directories(${ADDITIONAL_INCLUDE})
+include_directories(${RealsenseSDK_INCLUDE})
+include_directories(${PUGI_DIR})
+
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+
 
 # If the package has been found, several variables will
 # be set, you can find the full list with descriptions
@@ -34,26 +34,8 @@ if(CMAKE_VERSION VERSION_LESS "2.8.11")
 endif()
 
 # Declare the executable target built from your sources
-set(SOURCES 
-	main.cpp
-	utilities.cpp
-	dynamic_projection.cpp
-	state.cpp
-	camera_calibration.cpp
-	projector_calibration.cpp
-	calibration.cpp
-	${REALSENSE_CAPTURE_DIR}/app.cpp
-	${ADDITIONAL_INCLUDE}/dynamic_projection.hpp
-	${ADDITIONAL_INCLUDE}/state.hpp
-	${ADDITIONAL_INCLUDE}/utilities.hpp
-	${ADDITIONAL_INCLUDE}/flags.hpp
-	${ADDITIONAL_INCLUDE}/camera_calibration.hpp
-	${ADDITIONAL_INCLUDE}/projector_calibration.hpp
-	${ADDITIONAL_INCLUDE}/calibration.hpp
-	${REALSENSE_CAPTURE_INCLUDE}/app.h
-	)
-
-add_executable(dynamic_projection ${SOURCES} )
+set(SOURCES main.cpp app.cpp ${ADDITIONAL_INCLUDE}/app.h ${ADDITIONAL_INCLUDE}/util.h)
+add_executable(reconstruction_markered ${SOURCES} )
 
 # Link your application with OpenCV libraries
-target_link_libraries(dynamic_projection ${OpenCV_LIBS} ${RealsenseSDK_LIB} ${GFLAGS_LIB} shlwapi.lib)
+target_link_libraries(reconstruction_markered ${OpenCV_LIBS} ${RealsenseSDK_LIB})
