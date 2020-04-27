@@ -1,6 +1,8 @@
 #ifndef __APP__
 #define __APP__
 
+#pragma once
+
 #include <Windows.h>
 #include <comutil.h>
 #include <iostream>
@@ -25,11 +27,14 @@
 #include <librealsense2/rs.hpp> 
 #include<mutex>
 #include <wrl/client.h>
+
+#include "camera_position.h"
+
 using namespace Microsoft::WRL;
 using namespace cv;
 using namespace std;
 using namespace rs2;
-
+using pcl_ptr = pcl::PointCloud<pcl::PointXYZ>::Ptr;
 
 class Capture {
 	struct single_frame
@@ -56,6 +61,9 @@ private :
 	void initialize();
 	void finalize();
 
+	// Camera position tracker
+	CameraPosition camera_position_;
+
 	// Sensor initializations
 	inline void initializeSensor();
 
@@ -68,20 +76,31 @@ private :
 
 	vector<single_frame> views;
 
-	// capture a single frame of depth and color frames to synchronize data
-	void save_depth_and_color_frameset();
-
 	bool stream_exists();
+
 	rs2::frame current_color_frame;
 	rs2::depth_frame current_depth_frame;
 
-	rs2::colorizer color_map;
+	Mat current_color_image;
+
+	void TrackCameraPosition();
 
 	// Drawing functions
 	void update();
 	void updateColor();
 	void updateDepth();
 	rs2::align align_to_color;
+
+	bool save_pose_and_cloud = false;
+	bool align_and_reconstruct = false;
+
+	pcl_ptr points_to_pcl(const rs2::points& points);
+	void SavePoseCloud();
+	void AlignAndReconstruct();
+	// Declare pointcloud object, for calculating pointclouds and texture mappings
+	rs2::pointcloud pc;
+	// We want the points object to be persistent so we can display the last cloud when a frame drops
+	rs2::points points;
 };
 
 #endif // __APP__

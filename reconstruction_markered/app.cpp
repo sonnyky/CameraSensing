@@ -70,14 +70,25 @@ void Capture::run()
 	while (true) {
 		update();
 	
-		if(waitKey(1) == 113) break;
-
+		if (waitKey(1) == 113) {
+			break;
+		}
+		else if (waitKey(1) == 115 && !save_pose_and_cloud) {
+			save_pose_and_cloud = true;
+			SavePoseCloud();
+		}
+		else if (waitKey(1) == 97 && !align_and_reconstruct) {
+			align_and_reconstruct = true;
+			AlignAndReconstruct();
+		}
 	}
 }
 
 // Initialize Sensor
 inline void Capture::initializeSensor()
 {
+
+	camera_position_.Initialize(string("camera_params.xml"), Size(7,4));
 	
 	//Add desired streams to configuration
 	//cfg.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_BGR8, 30);
@@ -91,6 +102,11 @@ inline void Capture::initializeSensor()
 	}
 
 }
+void Capture::TrackCameraPosition()
+{
+	if (!current_color_frame) return;
+	camera_position_.DetectChessboard(current_color_image);
+}
 // Update Data
 void Capture::update()
 {
@@ -99,18 +115,20 @@ void Capture::update()
 		cout << "No streams" << endl;
 	}
 	updateColor();
+
+	TrackCameraPosition();
+
 	updateDepth();
 }
 
 // Update Color
 void Capture::updateColor()
 {
-	rs2::frame color_frame = frames.get_color_frame();
-
-	if (!color_frame) return;
+	if (!current_color_frame) return;
 
 	// Creating OpenCV Matrix from a color image
-	Mat color(Size(640, 480), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
+	Mat color(Size(640, 480), CV_8UC3, (void*)current_color_frame.get_data(), Mat::AUTO_STEP);
+	color.copyTo(current_color_image);
 
 	// Display in a GUI
 	namedWindow("Display Image", WINDOW_AUTOSIZE);
@@ -142,6 +160,23 @@ void Capture::updateDepth(){
 	imshow("Depth", color_depth);
 }
 
+void Capture::SavePoseCloud()
+{
+	if (!current_depth_frame) return;
+	rs2::frame filtered = current_depth_frame;
+	// Note the concatenation of output/input frame to build up a chain
+	points = pc.calculate(filtered);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_points = points_to_pcl(points);	
+
+	camera_position_.SaveCurrentPoseAndCloud(pcl_points);
+	save_pose_and_cloud = false;
+}
+
+void Capture::AlignAndReconstruct()
+{
+	camera_position_.AlignAndReconstructClouds();
+}
+
 
 void Capture::poll_frames()
 {
@@ -164,8 +199,24 @@ bool Capture::stream_exists()
 	return true;
 }
 
-
-void Capture::save_depth_and_color_frameset()
+pcl_ptr Capture::points_to_pcl(const rs2::points & points)
 {
-	
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+
+	auto sp = points.get_profile().as<rs2::video_stream_profile>();
+	cloud->width = sp.width();
+	cloud->height = sp.height();
+	cloud->is_dense = false;
+	cloud->points.resize(points.size());
+	auto ptr = points.get_vertices();
+	for (auto& p : cloud->points)
+	{
+		p.x = ptr->x;
+		p.y = ptr->y;
+		p.z = ptr->z;
+		ptr++;
+	}
+
+	return cloud;
 }
+

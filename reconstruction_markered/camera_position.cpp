@@ -1,171 +1,89 @@
-#include "app.h"
-#include "util.h"
-#include <thread>
-#include <chrono>
+#include "camera_position.h"
 
-#include <numeric>
-#include <opencv2/opencv.hpp>
-#include <opencv2/highgui.hpp>
-#include <librealsense2/rs.hpp> 
-
-using namespace std;
-using namespace rs2;
-
-
-inline void make_depth_histogram(const Mat &depth, Mat &color_depth) {
-	color_depth = Mat(depth.size(), CV_8UC3);
-	int width = depth.cols, height = depth.rows;
-
-	static uint32_t histogram[0x10000];
-	memset(histogram, 0, sizeof(histogram));
-
-	for (int i = 0; i < height; ++i) {
-		for (int j = 0; j < width; ++j) {
-			++histogram[depth.at<ushort>(i, j)];
-		}
-	}
-
-	for (int i = 2; i < 0x10000; ++i) histogram[i] += histogram[i - 1]; // Build a cumulative histogram for the indices in [1,0xFFFF]
-
-	for (int i = 0; i < height; ++i) {
-		for (int j = 0; j < width; ++j) {
-			if (uint16_t d = depth.at<ushort>(i, j)) {
-				int f = histogram[d] * 255 / histogram[0xFFFF]; // 0-255 based on histogram location
-				color_depth.at<Vec3b>(i, j) = Vec3b(f, 0, 255 - f);
-			}
-			else {
-				color_depth.at<Vec3b>(i, j) = Vec3b(0, 5, 20);
-			}
-		}
-	}
-}
-
-
-// Constructor
-Capture::Capture() :align_to_color(RS2_STREAM_COLOR),
-					current_depth_frame(nullptr)
+CameraPosition::CameraPosition()
 {
-	// Initialize
-	initialize();
 }
 
-// Destructor
-Capture::~Capture()
+CameraPosition::~CameraPosition()
 {
-	// Finalize
-	finalize();
 }
 
-void Capture::initialize() {
-	
-	initializeSensor();
+inline void Create4x4MatrixFromRt(Mat rot, Mat trans, Mat *concat) {
+	// rot is a 3x3, trans is a 3x1
+	Mat temp;
+	Mat padding = Mat::zeros(1, 4, CV_64F);
+	padding.at<double>(0, 3) = 1.0;
+
+	hconcat(rot, trans, temp);
+	vconcat( temp, padding, *concat);
 }
 
-void Capture::finalize() {
 
-}
-
-void Capture::run()
+void CameraPosition::DetectChessboard(Mat image)
 {
-	while (true) {
-		update();
-	
-		if(waitKey(1) == 113) break;
+	chessboard_image_points_.clear();
+	bool foundChessCorners = findChessboardCorners(image, board_size_, chessboard_image_points_,
+		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
 
-	}
-}
+	if (foundChessCorners) {
+		drawChessboardCorners(image, board_size_, Mat(chessboard_image_points_), foundChessCorners);
+		imshow("Chessboard", image);
+		solvePnP(chessboard_world_points_, chessboard_image_points_, camera_matrix_, dist_coeffs_, board_rot_, board_trans_);
 
-// Initialize Sensor
-inline void Capture::initializeSensor()
-{
-	
-	//Add desired streams to configuration
-	//cfg.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_BGR8, 30);
-	m_pipeline.start();
+		board_rot_matrix_ = Mat::eye(3, 3, CV_64F);
+		Rodrigues(board_rot_, board_rot_matrix_);
 
-	
-	for (int i = 0; i < 30; i++)
-	{
-		//Wait for all configured streams to produce a frame
-		frames = m_pipeline.wait_for_frames();
+		// Finding the fundamental matrix from image to camera
+		Mat concatenated;
+		Create4x4MatrixFromRt(board_rot_matrix_, board_trans_, &concatenated);
+		Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> eigen_concat(concatenated.ptr<double>(), concatenated.rows, concatenated.cols);
+		current_camera_pose_from_image_ = eigen_concat.cast<float>();
 	}
 
 }
-// Update Data
-void Capture::update()
+
+
+bool CameraPosition::Initialize(string calib_file_name, Size board_size)
 {
-	poll_frames();
-	if (!stream_exists()) {
-		cout << "No streams" << endl;
-	}
-	updateColor();
-	updateDepth();
-}
+	FileStorage fs(calib_file_name, FileStorage::READ);
+	if (!fs.isOpened()) return false;
 
-// Update Color
-void Capture::updateColor()
-{
-	rs2::frame color_frame = frames.get_color_frame();
+	fs["camera_matrix"] >> camera_matrix_;
+	fs["distortion_coefficients"] >> dist_coeffs_;
 
-	if (!color_frame) return;
+	board_size_ = board_size;
 
-	// Creating OpenCV Matrix from a color image
-	Mat color(Size(640, 480), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
-
-	// Display in a GUI
-	namedWindow("Display Image", WINDOW_AUTOSIZE);
-	imshow("Display Image", color);
-}
-
-void Capture::updateDepth(){
-	
-
-	if (!current_depth_frame) return;
-
-	// Query frame size (width and height)
-	const int w = current_depth_frame.as<rs2::video_frame>().get_width();
-	const int h = current_depth_frame.as<rs2::video_frame>().get_height();
-
-	cv::Mat depthImage = cv::Mat(h, w, CV_16U, (char*)current_depth_frame.get_data());
-
-	// Create a color depth
-	Mat color_depth;
-	make_depth_histogram(depthImage, color_depth);
-
-	// Create a normalized depth
-	double min, max;
-	minMaxLoc(depthImage, &min, &max);
-	Mat depth_normalized;
-	double alpha = 255.0 / (max - min);
-	depthImage.convertTo(depth_normalized, CV_8U, alpha, -min * alpha);
-
-	imshow("Depth", color_depth);
-}
-
-
-void Capture::poll_frames()
-{
-	std::lock_guard<std::mutex> lock(_mutex);
-	
-	if (m_pipeline.poll_for_frames(&frames))
-	{
-		
-		frames = align_to_color.process(frames);
-		//frames.apply_filter(color_map);
-		
-		current_color_frame = frames.get_color_frame();
-		current_depth_frame = frames.get_depth_frame();
-	}
-}
-
-bool Capture::stream_exists()
-{
-	if(!frames.get_color_frame() || !frames.get_depth_frame()) return false;
+	SetupBoardObjectPoints();
 	return true;
 }
 
-
-void Capture::save_depth_and_color_frameset()
+void CameraPosition::SetupBoardObjectPoints()
 {
-	
+	chessboard_world_points_.clear();
+	for (int i = 0; i < board_size_.height; i++) {
+		for (int j = 0; j < board_size_.width; j++) {
+			chessboard_world_points_.push_back(cv::Point3f(float(j * square_size_), float(i * square_size_), 0));
+		}
+	}
+}
+
+void CameraPosition::SaveCurrentPoseAndCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+	CameraPosePointCloud current;
+	current.cloud = cloud;
+	current.camera_pose = current_camera_pose_from_image_;
+	point_clouds_wrt_camera_pose_.push_back(current);
+	cout << "the size of saved cloud : " << current.cloud->size() << endl;
+}
+
+void CameraPosition::AlignAndReconstructClouds()
+{
+	if (point_clouds_wrt_camera_pose_.size() == 0) {
+		cout << "point clouds list is empty" <<endl;
+		return;
+	}
+	cout << "check the pose and cloud " << endl;
+	cout << "cloud size : " << point_clouds_wrt_camera_pose_[0].cloud->size() << endl;
+	cout << "pose : " << point_clouds_wrt_camera_pose_[0].camera_pose << endl;
+
 }

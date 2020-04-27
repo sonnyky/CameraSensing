@@ -1,37 +1,67 @@
-#ifndef __UTIL__
+#ifndef __CAM_POS__
 #define __UTIL__
+#include <iostream>
+#include <vector>
 
-#include <sstream>
-#include <stdexcept>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_representation.h>
 
-// Error Check Macro
-#define ERROR_CHECK( ret )                                        \
-    if( FAILED( ret ) ){                                          \
-        std::stringstream ss;                                     \
-        ss << "failed " #ret " " << std::hex << ret << std::endl; \
-        throw std::runtime_error( ss.str().c_str() );             \
-    }
+#include "opencv2/core.hpp"
+#include "opencv2/core/utility.hpp"
+#include "opencv2/imgproc.hpp"
+#include "opencv2/calib3d.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/videoio.hpp"
+#include <opencv2/highgui.hpp>
 
-// Safe Release
-template<class T>
-inline void SafeRelease(T*& rel)
-{
-	if (rel != NULL) {
-		rel->Release();
-		rel = NULL;
-	}
-}
 
-// C++ Style Line Types For OpenCV 2.x
-#if ( CV_MAJOR_VERSION < 3 )
-namespace cv {
-	enum LineTypes {
-		FILLED = -1,
-		LINE_4 = 4,
-		LINE_8 = 8,
-		LINE_AA = 16
+using namespace std;
+using namespace cv;
+using namespace pcl;
+
+class CameraPosition {
+
+	struct CameraPosePointCloud {
+		Eigen::Matrix4f camera_pose;
+		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
 	};
-}
-#endif
 
-#endif // __UTIL__
+public:
+	CameraPosition();
+	~CameraPosition();
+
+	void DetectChessboard(Mat image);
+
+	// Chessboard values
+	Size board_size_;
+	float square_size_ = 34.0; // in millimeters
+	float aspect_ratio_ = 1.0;
+	Mat camera_matrix_, dist_coeffs_;
+	string calib_file_name_;
+
+	// Board rotation and translation as detected by opencv
+	cv::Mat board_rot_;
+	Mat board_rot_matrix_;
+	cv::Mat board_trans_;
+	Eigen::Matrix4f current_camera_pose_from_image_;
+	
+	bool Initialize(string calib_file_name, Size board_size);
+	void SetupBoardObjectPoints();
+	Eigen::Matrix4f GetCurrentCameraPoseMatrix(){ return current_camera_pose_from_image_; };
+
+	// [0] is the base pose
+	void SaveCurrentPoseAndCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+
+	void AlignAndReconstructClouds();
+
+private:
+	vector<Point2f> chessboard_image_points_;
+	vector<Point3f> chessboard_world_points_;
+	vector<CameraPosePointCloud> point_clouds_wrt_camera_pose_;
+	pcl::PointCloud<pcl::PointXYZ>::Ptr aligned_cloud_;
+
+
+};
+
+#endif // __CAM_POS__
