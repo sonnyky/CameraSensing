@@ -252,6 +252,13 @@ void Tinker::pcl_to_mesh::align_clouds()
 		return; //failed to converge
 	}
 
+	// Create the filtering object
+	pcl::PointCloud<pcl::PointXYZ>::Ptr output(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::VoxelGrid<pcl::PointXYZ> vox;
+	vox.setInputCloud(temp);
+	vox.setLeafSize(0.01f, 0.01f, 0.01f);
+	vox.filter(*output);
+
 	//pcl::transformPointCloud(*temp, *aligned_cloud, GlobalTransform);
 
 	// set cloud 1 to be the aligned cloud
