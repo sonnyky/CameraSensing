@@ -7,6 +7,10 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_representation.h>
 
+#include <pcl/filters/crop_box.h>
+#include <pcl/io/pcd_io.h>
+
+
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
 #include "opencv2/imgproc.hpp"
@@ -15,6 +19,7 @@
 #include "opencv2/videoio.hpp"
 #include <opencv2/highgui.hpp>
 
+#include "pugixml.hpp";
 
 using namespace std;
 using namespace cv;
@@ -35,7 +40,7 @@ public:
 
 	// Chessboard values
 	Size board_size_;
-	float square_size_ = 34.0; // in millimeters
+	float square_size_ = 0.0340; // in meters
 	float aspect_ratio_ = 1.0;
 	Mat camera_matrix_, dist_coeffs_;
 	string calib_file_name_;
@@ -53,7 +58,13 @@ public:
 	// [0] is the base pose
 	void SaveCurrentPoseAndCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
+	void ClearAlignedCloud();
+
 	void AlignAndReconstructClouds();
+
+	void SaveSingleShotCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+
+	void SaveAlignedCloud();
 
 private:
 	vector<Point2f> chessboard_image_points_;

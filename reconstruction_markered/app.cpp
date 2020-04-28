@@ -45,6 +45,8 @@ inline void make_depth_histogram(const Mat &depth, Mat &color_depth) {
 Capture::Capture() :align_to_color(RS2_STREAM_COLOR),
 					current_depth_frame(nullptr)
 {
+	setup_capture_parameters();
+
 	// Initialize
 	initialize();
 }
@@ -73,15 +75,59 @@ void Capture::run()
 		if (waitKey(1) == 113) {
 			break;
 		}
+		else if (waitKey(1) == 99) {
+			SaveSingleCloud();
+		}
 		else if (waitKey(1) == 115 && !save_pose_and_cloud) {
 			save_pose_and_cloud = true;
 			SavePoseCloud();
 		}
 		else if (waitKey(1) == 97 && !align_and_reconstruct) {
 			align_and_reconstruct = true;
+			camera_position_.ClearAlignedCloud();
 			AlignAndReconstruct();
 		}
 	}
+}
+
+void Capture::setup_capture_parameters()
+{
+	cout << "Setting up capture parameters:" << endl;
+	pugi::xml_document doc;
+	pugi::xml_parse_result result = doc.load_file("parameters.xml");
+	cout << "Load result: " << result.description() << endl;
+
+	pugi::xpath_query query_filter_magnitude("/params/capture_params/filter_magnitude");
+	rs_filter_magnitude = stoi(query_filter_magnitude.evaluate_string(doc));
+
+	pugi::xpath_query query_time_diff("/params/capture_params/time_diff");
+	time_diff = stoi(query_time_diff.evaluate_string(doc));
+
+	pugi::xpath_query query_dist_min("/params/capture_params/dist_limit_min");
+	dist_limit_min = stof(query_dist_min.evaluate_string(doc));
+
+	pugi::xpath_query query_dist_max("/params/capture_params/dist_limit_max");
+	dist_limit_max = stof(query_dist_max.evaluate_string(doc));
+
+	pugi::xpath_query query_x_min("/params/capture_params/x_limit_min");
+	x_limit_min = stof(query_x_min.evaluate_string(doc));
+
+	pugi::xpath_query query_x_max("/params/capture_params/x_limit_max");
+	x_limit_max = stof(query_x_max.evaluate_string(doc));
+
+	pugi::xpath_query query_y_min("/params/capture_params/y_limit_min");
+	y_limit_min = stof(query_y_min.evaluate_string(doc));
+
+	pugi::xpath_query query_y_max("/params/capture_params/y_limit_max");
+	y_limit_max = stof(query_y_max.evaluate_string(doc));
+
+	pugi::xpath_query query_field_name("/params/capture_params/filter_field_name");
+	filter_field_name = query_field_name.evaluate_string(doc);
+
+	cout << "filter magnitude : " << rs_filter_magnitude << endl;
+	cout << "dist_limit_min : " << dist_limit_min << endl;
+	cout << "dist_limit_max : " << dist_limit_max << endl;
+	cout << "filter_field_name : " << filter_field_name << endl;
 }
 
 // Initialize Sensor
@@ -160,21 +206,61 @@ void Capture::updateDepth(){
 	imshow("Depth", color_depth);
 }
 
-void Capture::SavePoseCloud()
+pcl_ptr Capture::points_to_pcl(const rs2::points & points)
 {
-	if (!current_depth_frame) return;
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+
+	auto sp = points.get_profile().as<rs2::video_stream_profile>();
+	cloud->width = sp.width();
+	cloud->height = sp.height();
+	cloud->is_dense = false;
+	cloud->points.resize(points.size());
+	auto ptr = points.get_vertices();
+	for (auto& p : cloud->points)
+	{
+		p.x = ptr->x;
+		p.y = ptr->y;
+		p.z = ptr->z;
+		ptr++;
+	}
+
+	return cloud;
+}
+
+
+void Capture::SaveSingleCloud() {
+	cout << "save single shot" << endl;
+	camera_position_.SaveSingleShotCloud(GeneratePointCloud());
+}
+
+pcl_ptr Capture::GeneratePointCloud() {
+	pcl_ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	if (!current_depth_frame) return cloud_filtered;
 	rs2::frame filtered = current_depth_frame;
 	// Note the concatenation of output/input frame to build up a chain
 	points = pc.calculate(filtered);
-	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_points = points_to_pcl(points);	
 
-	camera_position_.SaveCurrentPoseAndCloud(pcl_points);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_points = points_to_pcl(points);
+
+	
+	pcl::CropBox<pcl::PointXYZ> boxFilter;
+	boxFilter.setMin(Eigen::Vector4f(x_limit_min, y_limit_min, dist_limit_min, 1.0));
+	boxFilter.setMax(Eigen::Vector4f(x_limit_max, y_limit_max, dist_limit_max, 1.0));
+	boxFilter.setInputCloud(pcl_points);
+	boxFilter.filter(*cloud_filtered);
+	return cloud_filtered;
+}
+
+void Capture::SavePoseCloud()
+{
+	camera_position_.SaveCurrentPoseAndCloud(GeneratePointCloud());
 	save_pose_and_cloud = false;
 }
 
 void Capture::AlignAndReconstruct()
 {
 	camera_position_.AlignAndReconstructClouds();
+	align_and_reconstruct = false;
 }
 
 
@@ -197,26 +283,5 @@ bool Capture::stream_exists()
 {
 	if(!frames.get_color_frame() || !frames.get_depth_frame()) return false;
 	return true;
-}
-
-pcl_ptr Capture::points_to_pcl(const rs2::points & points)
-{
-	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-
-	auto sp = points.get_profile().as<rs2::video_stream_profile>();
-	cloud->width = sp.width();
-	cloud->height = sp.height();
-	cloud->is_dense = false;
-	cloud->points.resize(points.size());
-	auto ptr = points.get_vertices();
-	for (auto& p : cloud->points)
-	{
-		p.x = ptr->x;
-		p.y = ptr->y;
-		p.z = ptr->z;
-		ptr++;
-	}
-
-	return cloud;
 }
 

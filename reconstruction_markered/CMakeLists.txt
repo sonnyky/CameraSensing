@@ -34,8 +34,8 @@ if(CMAKE_VERSION VERSION_LESS "2.8.11")
 endif()
 
 # Declare the executable target built from your sources
-set(SOURCES main.cpp app.cpp camera_position.cpp ${ADDITIONAL_INCLUDE}/app.h ${ADDITIONAL_INCLUDE}/util.h ${ADDITIONAL_INCLUDE}/camera_position.h)
+set(SOURCES main.cpp app.cpp camera_position.cpp ${PUGI_DIR}/pugixml.cpp ${ADDITIONAL_INCLUDE}/app.h ${ADDITIONAL_INCLUDE}/util.h ${ADDITIONAL_INCLUDE}/camera_position.h)
 add_executable(reconstruction_markered ${SOURCES} )
 
 # Link your application with OpenCV libraries
-target_link_libraries(reconstruction_markered ${OpenCV_LIBS} ${RealsenseSDK_LIB})
+target_link_libraries(reconstruction_markered ${OpenCV_LIBS} ${RealsenseSDK_LIB} ${PCL_LIBRARIES} ${GFLAGS_LIB})

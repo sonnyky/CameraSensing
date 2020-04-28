@@ -1,6 +1,6 @@
 #include "camera_position.h"
 
-CameraPosition::CameraPosition()
+CameraPosition::CameraPosition():aligned_cloud_(new pcl::PointCloud<pcl::PointXYZ>)
 {
 }
 
@@ -73,17 +73,62 @@ void CameraPosition::SaveCurrentPoseAndCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr
 	current.cloud = cloud;
 	current.camera_pose = current_camera_pose_from_image_;
 	point_clouds_wrt_camera_pose_.push_back(current);
+	cout << "the size of input cloud : " << cloud->size() << endl;
 	cout << "the size of saved cloud : " << current.cloud->size() << endl;
+}
+
+void CameraPosition::ClearAlignedCloud() {
+	aligned_cloud_->clear();
 }
 
 void CameraPosition::AlignAndReconstructClouds()
 {
-	if (point_clouds_wrt_camera_pose_.size() == 0) {
-		cout << "point clouds list is empty" <<endl;
+	if (point_clouds_wrt_camera_pose_.size() < 2) {
+		cout << "point clouds list not enough for reconstruction" <<endl;
 		return;
 	}
 	cout << "check the pose and cloud " << endl;
 	cout << "cloud size : " << point_clouds_wrt_camera_pose_[0].cloud->size() << endl;
-	cout << "pose : " << point_clouds_wrt_camera_pose_[0].camera_pose << endl;
+	cout << "pose : " << endl;
 
+	cout << point_clouds_wrt_camera_pose_[0].camera_pose << endl;
+	Eigen::Matrix4f inverse = point_clouds_wrt_camera_pose_[0].camera_pose.inverse();
+
+	*aligned_cloud_ += *(point_clouds_wrt_camera_pose_[0].cloud);
+
+	cout << "inverse :" << endl;
+	cout << inverse << endl;
+
+	cout << " test shouldBeIdentity :" << endl;
+	Eigen::Matrix4f shouldBeIdentity = point_clouds_wrt_camera_pose_[0].camera_pose * inverse;
+	cout << shouldBeIdentity << endl;
+
+	// T1 = M * T2
+	// To get the transformation matrix M between two camera poses, we need to do M = T1 * inv(T2)
+	for (int i = 1; i < point_clouds_wrt_camera_pose_.size(); i++) {
+		
+		Eigen::Matrix4f transformationMatrixFromBase = point_clouds_wrt_camera_pose_[i].camera_pose * inverse;
+		cout << "transformationMatrixFromBase : " << endl;
+		cout << transformationMatrixFromBase << endl;
+
+		pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::transformPointCloud(*point_clouds_wrt_camera_pose_[i].cloud, *transformed_cloud, transformationMatrixFromBase.inverse());
+		point_clouds_wrt_camera_pose_[i].cloud = transformed_cloud;
+
+		*aligned_cloud_ += *transformed_cloud;
+		
+	}
+
+	SaveAlignedCloud();
+
+}
+
+void CameraPosition::SaveSingleShotCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+	pcl::io::savePCDFile("single_shot.pcd", *cloud, true);
+}
+
+void CameraPosition::SaveAlignedCloud()
+{
+	pcl::io::savePCDFile("aligned_markered.pcd", *aligned_cloud_, true);
 }
