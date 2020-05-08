@@ -11,9 +11,7 @@ set( OpenCV_DIR "D:/Libraries/x64/opencv/build" )
 option( OpenCV_STATIC OFF )
 find_package(OpenCV REQUIRED)
 
-# PCL
-set(PCL_DIR "D:/Libraries/pcl64/PCL 1.8.1/cmake")
-find_package(PCL 1.8.1 REQUIRED)
+
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -24,8 +22,6 @@ find_package(gflags REQUIRED)
 set(GFLAGS_INCLUDE "D:/Libraries/gflags/install/include")
 set(GFLAGS_LIB "D:/Libraries/gflags/install/lib/gflags_nothreads_static.lib")
 
-# PugiXML
-set(PUGI_DIR "D:/Libraries/pugixml-1.10/pugixml-1.10/src")
 
 # Realsense SDK
 set(RealsenseSDK_ROOT "D:/Workspace/librealsense")
