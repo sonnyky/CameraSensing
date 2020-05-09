@@ -72,16 +72,20 @@ void Capture::run()
 	while (true) {
 		update();
 	
+		// "q" key
 		if (waitKey(1) == 113) {
 			break;
 		}
+		// "c" key
 		else if (waitKey(1) == 99) {
 			SaveSingleCloud();
 		}
+		// "s" key
 		else if (waitKey(1) == 115 && !save_pose_and_cloud) {
 			save_pose_and_cloud = true;
 			SavePoseCloud();
 		}
+		// "a" key
 		else if (waitKey(1) == 97 && !align_and_reconstruct) {
 			align_and_reconstruct = true;
 			camera_position_.ClearAlignedCloud();

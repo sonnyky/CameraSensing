@@ -3,12 +3,25 @@
 #include <iostream>
 #include <vector>
 
+#include <pcl/ModelCoefficients.h>
+
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_representation.h>
-
+#include <pcl/visualization/common/common.h>
+#include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/filters/crop_box.h>
 #include <pcl/io/pcd_io.h>
+#include <pcl/range_image/range_image.h>
+
+#include <pcl/filters/extract_indices.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/kdtree/kdtree.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/segmentation/extract_clusters.h>
 
 
 #include "opencv2/core.hpp"
@@ -65,6 +78,16 @@ public:
 	void SaveSingleShotCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 	void SaveAlignedCloud();
+
+	// Visualization
+	pcl::visualization::PCLVisualizer viewer;
+	void visualize(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+
+	// Cluster extraction
+	void ClusterExtraction(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+
+	// Data processing, smoothing, filtering etc.
+
 
 private:
 	vector<Point2f> chessboard_image_points_;
