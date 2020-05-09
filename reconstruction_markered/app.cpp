@@ -142,8 +142,14 @@ inline void Capture::initializeSensor()
 	
 	//Add desired streams to configuration
 	//cfg.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_BGR8, 30);
-	m_pipeline.start();
+	pipeline_profile profile_cap = m_pipeline.start();
 
+	auto device = profile_cap.get_device();
+	std::vector<rs2::sensor> sensors = device.query_sensors();
+
+	if (sensors.size() > 0) {
+		sensors[0].set_option(rs2_option::RS2_OPTION_VISUAL_PRESET, rs2_rs400_visual_preset::RS2_RS400_VISUAL_PRESET_HIGH_ACCURACY);
+	}
 	
 	for (int i = 0; i < 30; i++)
 	{
