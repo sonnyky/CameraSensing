@@ -3,13 +3,29 @@
 #include <iostream>
 #include <vector>
 
+#include <pcl/ModelCoefficients.h>
+
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_representation.h>
-
+#include <pcl/visualization/common/common.h>
+#include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/filters/crop_box.h>
 #include <pcl/io/pcd_io.h>
+#include <pcl/range_image/range_image.h>
 
+#include <pcl/filters/extract_indices.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/kdtree/kdtree.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/segmentation/extract_clusters.h>
+
+#include <pcl/filters/statistical_outlier_removal.h>
+
+#include <pcl/surface/mls.h>
 
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
@@ -65,6 +81,17 @@ public:
 	void SaveSingleShotCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 	void SaveAlignedCloud();
+
+	// Visualization
+	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer;
+	void visualize(pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud, pcl::PointCloud<pcl::PointNormal>::ConstPtr normals);
+
+	// Cluster extraction
+	void ClusterExtraction(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+
+	// Data processing, smoothing, filtering etc.
+	void RemoveStatisticalOutliers(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered);
+	void AddNormalsToPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals);
 
 private:
 	vector<Point2f> chessboard_image_points_;
