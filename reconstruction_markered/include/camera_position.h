@@ -23,6 +23,7 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/segmentation/extract_clusters.h>
 
+#include <pcl/filters/statistical_outlier_removal.h>
 
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
@@ -87,7 +88,7 @@ public:
 	void ClusterExtraction(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 	// Data processing, smoothing, filtering etc.
-
+	void RemoveStatisticalOutliers(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered);
 
 private:
 	vector<Point2f> chessboard_image_points_;

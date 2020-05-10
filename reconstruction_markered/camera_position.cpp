@@ -127,7 +127,10 @@ void CameraPosition::AlignAndReconstructClouds()
 
 void CameraPosition::SaveSingleShotCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 {
-	pcl::io::savePCDFile("single_shot.pcd", *cloud, true);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	RemoveStatisticalOutliers(cloud, cloud_filtered);
+	visualize(cloud_filtered);
+	pcl::io::savePCDFile("single_shot.pcd", *cloud_filtered, true);
 }
 
 void CameraPosition::SaveAlignedCloud()
@@ -235,5 +238,16 @@ void CameraPosition::ClusterExtraction(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud
 		writer.write<pcl::PointXYZ>(ss.str(), *cloud_cluster, false); //*
 		j++;
 	}
+
+}
+
+void CameraPosition::RemoveStatisticalOutliers(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered)
+{
+	// Create the filtering object
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
 
 }
