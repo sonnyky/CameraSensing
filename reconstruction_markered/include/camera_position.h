@@ -25,6 +25,8 @@
 
 #include <pcl/filters/statistical_outlier_removal.h>
 
+#include <pcl/surface/mls.h>
+
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
 #include "opencv2/imgproc.hpp"
@@ -81,14 +83,15 @@ public:
 	void SaveAlignedCloud();
 
 	// Visualization
-	pcl::visualization::PCLVisualizer viewer;
-	void visualize(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer;
+	void visualize(pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud, pcl::PointCloud<pcl::PointNormal>::ConstPtr normals);
 
 	// Cluster extraction
 	void ClusterExtraction(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 	// Data processing, smoothing, filtering etc.
 	void RemoveStatisticalOutliers(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered);
+	void AddNormalsToPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals);
 
 private:
 	vector<Point2f> chessboard_image_points_;
