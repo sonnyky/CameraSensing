@@ -1,7 +1,11 @@
 #include "camera_position.h"
 
-CameraPosition::CameraPosition():aligned_cloud_(new pcl::PointCloud<pcl::PointXYZ>)
+CameraPosition::CameraPosition():
+	aligned_cloud_(new pcl::PointCloud<pcl::PointXYZ>),
+	viewer(new pcl::visualization::PCLVisualizer("3D Viewer"))
 {
+	viewer->addCoordinateSystem(0.1);
+	viewer->setBackgroundColor(0, 0, 0);
 }
 
 CameraPosition::~CameraPosition()
@@ -125,10 +129,154 @@ void CameraPosition::AlignAndReconstructClouds()
 
 void CameraPosition::SaveSingleShotCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 {
-	pcl::io::savePCDFile("single_shot.pcd", *cloud, true);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	RemoveStatisticalOutliers(cloud, cloud_filtered);
+
+	pcl::PointCloud<pcl::PointNormal>::Ptr mls_points(new pcl::PointCloud<pcl::PointNormal>());
+	AddNormalsToPointCloud(cloud_filtered, mls_points);
+
+	pcl::io::savePCDFile("single_shot.pcd", *cloud_filtered, true);
+	pcl::io::savePCDFile("single_shot_normals.pcd", *mls_points, true);
+
+	visualize(cloud_filtered, mls_points);
 }
 
 void CameraPosition::SaveAlignedCloud()
 {
 	pcl::io::savePCDFile("aligned_markered.pcd", *aligned_cloud_, true);
+}
+
+void CameraPosition::visualize(pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud, pcl::PointCloud<pcl::PointNormal>::ConstPtr normals)
+{
+	pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_rgb(new pcl::PointCloud<pcl::PointXYZRGB>);
+
+	cloud_rgb->resize(cloud->size());
+
+	for (int i = 0; i < cloud->size(); i++) {
+		cloud_rgb->points[i].x = cloud->points[i].x;
+		cloud_rgb->points[i].y = cloud->points[i].y;
+		cloud_rgb->points[i].z = cloud->points[i].z;
+
+	}
+
+	pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> rgb(cloud_rgb, 0, 0, 255); //blue
+	viewer->addPointCloud<pcl::PointXYZRGB>(cloud_rgb, rgb, "cloud_rgb");
+	viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "cloud_rgb");
+	viewer->addPointCloudNormals<pcl::PointXYZRGB, pcl::PointNormal>(cloud_rgb, normals, 10, 0.05f, "normals", 0);
+	viewer->spin();
+
+}
+
+void CameraPosition::ClusterExtraction(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+	// the output cloud
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_f(new pcl::PointCloud<pcl::PointXYZ>);
+
+	// Create the filtering object: downsample the dataset using a leaf size of 1cm
+	pcl::VoxelGrid<pcl::PointXYZ> vg;
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+	vg.setInputCloud(cloud);
+	vg.setLeafSize(0.01f, 0.01f, 0.01f);
+	vg.filter(*cloud_filtered);
+
+	// Create the segmentation object for the planar model and set all the parameters
+	pcl::SACSegmentation<pcl::PointXYZ> seg;
+	pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+	pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_plane(new pcl::PointCloud<pcl::PointXYZ>());
+	pcl::PCDWriter writer;
+	seg.setOptimizeCoefficients(true);
+	seg.setModelType(pcl::SACMODEL_PLANE);
+	seg.setMethodType(pcl::SAC_RANSAC);
+	seg.setMaxIterations(100);
+	seg.setDistanceThreshold(0.02);
+
+	int i = 0, nr_points = (int)cloud_filtered->points.size();
+	while (cloud_filtered->points.size() > 0.3 * nr_points)
+	{
+		// Segment the largest planar component from the remaining cloud
+		seg.setInputCloud(cloud_filtered);
+		seg.segment(*inliers, *coefficients);
+		if (inliers->indices.size() == 0)
+		{
+			std::cout << "Could not estimate a planar model for the given dataset." << std::endl;
+			break;
+		}
+
+		// Extract the planar inliers from the input cloud
+		pcl::ExtractIndices<pcl::PointXYZ> extract;
+		extract.setInputCloud(cloud_filtered);
+		extract.setIndices(inliers);
+		extract.setNegative(false);
+
+		// Get the points associated with the planar surface
+		extract.filter(*cloud_plane);
+		std::cout << "PointCloud representing the planar component: " << cloud_plane->points.size() << " data points." << std::endl;
+
+		// Remove the planar inliers, extract the rest
+		extract.setNegative(true);
+		extract.filter(*cloud_f);
+		*cloud_filtered = *cloud_f;
+	}
+
+	// Creating the KdTree object for the search method of the extraction
+	pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
+	tree->setInputCloud(cloud_filtered);
+
+	std::vector<pcl::PointIndices> cluster_indices;
+	pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+	ec.setClusterTolerance(0.02); // 2cm
+	ec.setMinClusterSize(100);
+	ec.setMaxClusterSize(25000);
+	ec.setSearchMethod(tree);
+	ec.setInputCloud(cloud_filtered);
+	ec.extract(cluster_indices);
+
+	int j = 0;
+	for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
+	{
+		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster(new pcl::PointCloud<pcl::PointXYZ>);
+		for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
+			cloud_cluster->points.push_back(cloud_filtered->points[*pit]); //*
+		cloud_cluster->width = cloud_cluster->points.size();
+		cloud_cluster->height = 1;
+		cloud_cluster->is_dense = true;
+
+		std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size() << " data points." << std::endl;
+		std::stringstream ss;
+		ss << "cloud_cluster_" << j << ".pcd";
+		writer.write<pcl::PointXYZ>(ss.str(), *cloud_cluster, false); //*
+		j++;
+	}
+
+}
+
+void CameraPosition::RemoveStatisticalOutliers(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered)
+{
+	// Create the filtering object
+	pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+	sor.setInputCloud(cloud);
+	sor.setMeanK(50);
+	sor.setStddevMulThresh(1.0);
+	sor.filter(*cloud_filtered);
+
+}
+
+void CameraPosition::AddNormalsToPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals)
+{
+	// Create a KD-Tree
+	pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
+	// Init object (second point type is for the normals, even if unused)
+	pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointNormal> mls;
+	mls.setComputeNormals(true);
+
+	// Set parameters
+	mls.setInputCloud(cloud);
+	mls.setPolynomialOrder(2);
+	mls.setSearchMethod(tree);
+	mls.setSearchRadius(0.03);
+
+	// Reconstruct
+	mls.process(*cloud_with_normals);
+
 }
