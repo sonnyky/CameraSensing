@@ -82,6 +82,10 @@ public:
 
 	void SaveAlignedCloud();
 
+	vector<pcl::PointCloud<pcl::PointXYZ>> plane_clusters;
+
+	pcl::PointXYZ GetClusterCentroid(pcl::PointCloud<pcl::PointXYZ> cluster);
+
 	// Visualization
 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer;
 	void visualize(pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud, pcl::PointCloud<pcl::PointNormal>::ConstPtr normals);

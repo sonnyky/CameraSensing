@@ -138,6 +138,8 @@ void CameraPosition::SaveSingleShotCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr clo
 	pcl::io::savePCDFile("single_shot.pcd", *cloud_filtered, true);
 	pcl::io::savePCDFile("single_shot_normals.pcd", *mls_points, true);
 
+	ClusterExtraction(cloud_filtered);
+
 	visualize(cloud_filtered, mls_points);
 }
 
@@ -162,7 +164,7 @@ void CameraPosition::visualize(pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud, p
 	pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGB> rgb(cloud_rgb, 0, 0, 255); //blue
 	viewer->addPointCloud<pcl::PointXYZRGB>(cloud_rgb, rgb, "cloud_rgb");
 	viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "cloud_rgb");
-	viewer->addPointCloudNormals<pcl::PointXYZRGB, pcl::PointNormal>(cloud_rgb, normals, 10, 0.05f, "normals", 0);
+	//viewer->addPointCloudNormals<pcl::PointXYZRGB, pcl::PointNormal>(cloud_rgb, normals, 10, 0.05f, "normals", 0);
 	viewer->spin();
 
 }
@@ -233,6 +235,7 @@ void CameraPosition::ClusterExtraction(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud
 	ec.extract(cluster_indices);
 
 	int j = 0;
+	plane_clusters.clear();
 	for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
 	{
 		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster(new pcl::PointCloud<pcl::PointXYZ>);
@@ -241,6 +244,9 @@ void CameraPosition::ClusterExtraction(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud
 		cloud_cluster->width = cloud_cluster->points.size();
 		cloud_cluster->height = 1;
 		cloud_cluster->is_dense = true;
+
+		// Save the clusters into a variable for later processing
+		plane_clusters.push_back(*cloud_cluster);
 
 		std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size() << " data points." << std::endl;
 		std::stringstream ss;
