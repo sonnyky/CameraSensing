@@ -134,6 +134,11 @@ void Capture::setup_capture_parameters()
 	cout << "filter_field_name : " << filter_field_name << endl;
 }
 
+void Capture::ReadCloudFiles(string path_to_files)
+{
+	path_to_cloud_files_.push_back(path_to_files);
+}
+
 // Initialize Sensor
 inline void Capture::initializeSensor()
 {
@@ -271,6 +276,11 @@ void Capture::AlignAndReconstruct()
 {
 	camera_position_.AlignAndReconstructClouds();
 	align_and_reconstruct = false;
+}
+
+void Capture::SetCloudFromFiles()
+{
+	camera_position_.SetCloudsFromFile(path_to_cloud_files_);
 }
 
 

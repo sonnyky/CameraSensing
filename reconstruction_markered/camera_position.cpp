@@ -286,3 +286,52 @@ void CameraPosition::AddNormalsToPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr 
 	mls.process(*cloud_with_normals);
 
 }
+
+void CameraPosition::SetCloudsFromFile(vector<string> paths_to_cloud_files)
+{
+	point_clusters_from_file.clear();
+	for (int i = 0; i < paths_to_cloud_files.size(); i++) {
+		pcl::PCLPointCloud2 cloud_blob;
+		pcl::io::loadPCDFile(paths_to_cloud_files[i], cloud_blob);
+		pcl::PointCloud<pcl::PointXYZ> point_cloud;
+		pcl::fromPCLPointCloud2(cloud_blob, point_cloud);
+		point_clusters_from_file.push_back(point_cloud);
+	}
+}
+
+CameraPosition::Plane CameraPosition::EstimatePlane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+	pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+	pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+	// Create the segmentation object
+	pcl::SACSegmentation<pcl::PointXYZ> seg;
+	// Optional
+	seg.setOptimizeCoefficients(true);
+	// Mandatory
+	seg.setModelType(pcl::SACMODEL_PLANE);
+	seg.setMethodType(pcl::SAC_RANSAC);
+	seg.setDistanceThreshold(0.01);
+
+	seg.setInputCloud(cloud);
+	seg.segment(*inliers, *coefficients);
+
+	Plane estimate;
+	estimate.a = 0.0; estimate.b = 0.0; estimate.c = 0.0; estimate.d = 0.0;
+
+	if (inliers->indices.size() == 0)
+	{
+		PCL_ERROR("Could not estimate a planar model for the given dataset.");
+		return estimate;
+	}
+
+	estimate.a = coefficients->values[0];
+	estimate.b = coefficients->values[1];
+	estimate.c = coefficients->values[2];
+	estimate.d = coefficients->values[3];
+
+	std::cerr << "Model coefficients: " << coefficients->values[0] << " "
+		<< coefficients->values[1] << " "
+		<< coefficients->values[2] << " "
+		<< coefficients->values[3] << std::endl;
+	return Plane();
+}

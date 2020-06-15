@@ -57,6 +57,8 @@ public:
 	~Capture();
 	void run();
 	void setup_capture_parameters();
+	void ReadCloudFiles(string path_to_files);
+	void SetCloudFromFiles();
 
 private :
 	void initialize();
@@ -108,6 +110,7 @@ private :
 	int rs_filter_magnitude = 3;
 	int time_diff = 2;
 
+	vector<string> path_to_cloud_files_;
 
 	// in meters
 	float dist_limit_min = 0.0;
