@@ -297,6 +297,12 @@ void CameraPosition::SetCloudsFromFile(vector<string> paths_to_cloud_files)
 		pcl::fromPCLPointCloud2(cloud_blob, point_cloud);
 		point_clusters_from_file.push_back(point_cloud);
 	}
+
+	if (point_clusters_from_file.size() > 0) {
+		pcl::PointCloud<pcl::PointXYZ>::Ptr current(&point_clusters_from_file[0]);
+		EstimatePlane(current);
+	}
+
 }
 
 CameraPosition::Plane CameraPosition::EstimatePlane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)

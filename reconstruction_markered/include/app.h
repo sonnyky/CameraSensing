@@ -59,6 +59,7 @@ public:
 	void setup_capture_parameters();
 	void ReadCloudFiles(string path_to_files);
 	void SetCloudFromFiles();
+	void EstimatePlanesFromFiles();
 
 private :
 	void initialize();
