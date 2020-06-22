@@ -28,4 +28,8 @@ extern "C" {
 	void com_tinker_recognition_release_camera(recognition* instance) {
 		instance->release_camera();
 	}
+	common_api void com_tinker_recognition_detect_faces(recognition * instance, unsigned char * input, unsigned char * processed, int width, int height)
+	{
+		return common_api void();
+	}
 }

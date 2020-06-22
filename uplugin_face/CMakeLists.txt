@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 
 project (uplugin_face)
 set(CMAKE_BUILD_TYPE Release)
-set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/uplugin/cv_depth)
+set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/uplugin/face)
 
 # Find OpenCV, you may need to set OpenCV_DIR variable
 # to the absolute path to the directory containing OpenCVConfig.cmake file

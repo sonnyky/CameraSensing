@@ -33,9 +33,12 @@ public:
 	void get_color_image(unsigned char * data, int &width, int &height);
 	void release_camera();
 	void destroy_class();
+	void detect_faces(unsigned char * input, unsigned char * processed, int width, int height);
 	
 private:
 	bool init_success_flag;
 	VideoCapture cap;
+	CascadeClassifier face_cascade;
+	const char * error = "no error";
 };
 

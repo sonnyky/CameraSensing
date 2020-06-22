@@ -9,6 +9,10 @@ const std::string platform_camera_name = "Platform Camera";
 
 recognition::recognition()
 {
+	face_cascade.load("lbpcascade_frontalface.xml");
+	if (face_cascade.empty()) {
+		error = "cascade load error";
+	}
 }
 
 recognition::~recognition()
@@ -30,6 +34,26 @@ const char * recognition::get_error_message() {
 
 void recognition::destroy_class() {
 	delete this;
+}
+
+void recognition::detect_faces(unsigned char * input, unsigned char * processed, int width, int height)
+{
+	Mat image(height, width, CV_8UC4);
+	memcpy(image.data, input, height * width * 4);
+
+	Mat frame_gray;
+	cvtColor(image, frame_gray, COLOR_RGBA2GRAY);
+	equalizeHist(frame_gray, frame_gray);
+
+	std::vector<Rect> faces;
+	face_cascade.detectMultiScale(frame_gray, faces);
+	for (size_t i = 0; i < faces.size(); i++)
+	{
+		rectangle(image, faces[i], Scalar(255.0, 0.0, 255.0, 1.0), 2, 8, 0);
+	}
+
+	memcpy(processed, image.data, height * width * 4);
+
 }
 
 void recognition::setup_camera() {
