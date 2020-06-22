@@ -113,10 +113,6 @@ private:
 	vector<CameraPosePointCloud> point_clouds_wrt_camera_pose_;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr aligned_cloud_;
 	vector<Plane> planes_to_paint;
-
-	// Test point cloud from file
-	vector<pcl::PointCloud<pcl::PointXYZ>> point_clusters_from_file;
-
 };
 
 #endif // __CAM_POS__
