@@ -48,6 +48,13 @@ class CameraPosition {
 		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
 	};
 
+	struct Plane {
+		float a;
+		float b;
+		float c;
+		float d;
+	};
+
 public:
 	CameraPosition();
 	~CameraPosition();
@@ -71,7 +78,7 @@ public:
 	void SetupBoardObjectPoints();
 	Eigen::Matrix4f GetCurrentCameraPoseMatrix(){ return current_camera_pose_from_image_; };
 
-	// [0] is the base pose
+	// The first pose, index [0] is the base pose
 	void SaveCurrentPoseAndCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 	void ClearAlignedCloud();
@@ -81,6 +88,10 @@ public:
 	void SaveSingleShotCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 	void SaveAlignedCloud();
+
+	vector<pcl::PointCloud<pcl::PointXYZ>> plane_clusters;
+
+	pcl::PointXYZ GetClusterCentroid(pcl::PointCloud<pcl::PointXYZ> cluster);
 
 	// Visualization
 	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer;
@@ -93,13 +104,15 @@ public:
 	void RemoveStatisticalOutliers(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered);
 	void AddNormalsToPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals);
 
+	void SetCloudsFromFile(vector<string> paths_to_cloud_files);
+	Plane EstimatePlane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+
 private:
 	vector<Point2f> chessboard_image_points_;
 	vector<Point3f> chessboard_world_points_;
 	vector<CameraPosePointCloud> point_clouds_wrt_camera_pose_;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr aligned_cloud_;
-
-
+	vector<Plane> planes_to_paint;
 };
 
 #endif // __CAM_POS__
