@@ -11,11 +11,14 @@
 #include <pcl/visualization/common/common.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/filters/crop_box.h>
-#include <pcl/io/pcd_io.h>
-#include <pcl/range_image/range_image.h>
-
+#include <pcl/filters/project_inliers.h>
+#include <pcl/filters/passthrough.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+
+#include <pcl/io/pcd_io.h>
+#include <pcl/range_image/range_image.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/kdtree/kdtree.h>
 #include <pcl/sample_consensus/method_types.h>
@@ -23,9 +26,9 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/segmentation/extract_clusters.h>
 
-#include <pcl/filters/statistical_outlier_removal.h>
-
 #include <pcl/surface/mls.h>
+#include <pcl/surface/convex_hull.h>
+
 
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
@@ -106,6 +109,9 @@ public:
 
 	void SetCloudsFromFile(vector<string> paths_to_cloud_files);
 	Plane EstimatePlane(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
+
+	// Estimate 2D hull
+	pcl::PointCloud<pcl::PointXYZ> Estimate2DHull(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 private:
 	vector<Point2f> chessboard_image_points_;
