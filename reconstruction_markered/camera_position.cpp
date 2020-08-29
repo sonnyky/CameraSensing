@@ -336,3 +336,44 @@ CameraPosition::Plane CameraPosition::EstimatePlane(pcl::PointCloud<pcl::PointXY
 		<< coefficients->values[3] << std::endl;
 	return estimate;
 }
+
+pcl::PointCloud<pcl::PointXYZ> CameraPosition::Estimate2DHull(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>), cloud_projected(new pcl::PointCloud<pcl::PointXYZ>);
+	// Build a filter to remove spurious NaNs
+	pcl::PassThrough<pcl::PointXYZ> pass;
+	pass.setInputCloud(cloud);
+	pass.setFilterFieldName("z");
+	pass.setFilterLimits(0, 1.1);
+	pass.filter(*cloud_filtered);
+	std::cerr << "PointCloud after filtering has: " << cloud_filtered->points.size() << " data points." << std::endl;
+
+	pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+	pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+	// Create the segmentation object
+	pcl::SACSegmentation<pcl::PointXYZ> seg;
+	// Optional
+	seg.setOptimizeCoefficients(true);
+	// Mandatory
+	seg.setModelType(pcl::SACMODEL_PLANE);
+	seg.setMethodType(pcl::SAC_RANSAC);
+	seg.setDistanceThreshold(0.01);
+
+	seg.setInputCloud(cloud_filtered);
+	seg.segment(*inliers, *coefficients);
+
+	// Project the model inliers
+	pcl::ProjectInliers<pcl::PointXYZ> proj;
+	proj.setModelType(pcl::SACMODEL_PLANE);
+	proj.setInputCloud(cloud_filtered);
+	proj.setIndices(inliers);
+	proj.setModelCoefficients(coefficients);
+	proj.filter(*cloud_projected);
+
+	pcl::PointCloud<pcl::PointXYZ> cloud_hull;
+	pcl::ConvexHull<pcl::PointXYZ> chull;
+	chull.setInputCloud(cloud_projected);
+	chull.reconstruct(cloud_hull);
+
+	return cloud_hull;
+}
