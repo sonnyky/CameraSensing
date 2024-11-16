@@ -52,26 +52,53 @@ struct Nothing
 	}
 };
 
-struct StartCalibrationEvent
+struct IdleToCalibrationEvent
 {
 };
 
-struct StartTrackingEvent
+struct IdleToTrackingEvent
 {
 };
+
+struct CalibrationToIdleEvent
+{};
+
+struct TrackingToIdleEvent{};
+
 
 struct TrackingState;
 struct CalibrationState;
 
-struct TrackingState
+struct IdleState
 {
-	TransitionTo<CalibrationState> state_handler(const StartCalibrationEvent&) const
+	TransitionTo<TrackingState> state_handler(const IdleToTrackingEvent&) const
 	{
-		std::cout << "Opening the door..." << std::endl;
+		std::cout << "Transitioning from IdleState to TrackingState..." << std::endl;
 		return {};
 	}
 
-	Nothing state_handler(const StartTrackingEvent&) const
+	TransitionTo<CalibrationState> state_handler(const IdleToCalibrationEvent&) const
+	{
+		std::cout << "Transitioning from IdleState to CalibrationState..." << std::endl;
+		return {};
+	}
+
+	Nothing state_handler(...) const
+	{
+		std::cout << "IdleState: Event not recognized." << std::endl;
+		return {};
+	}
+};
+
+struct TrackingState
+{
+	TransitionTo<IdleState> state_handler(const TrackingToIdleEvent&) const
+	{
+		std::cout << "Transitioning from TrackingState to IdleState..." << std::endl;
+		return {};
+	}
+
+	Nothing state_handler(const IdleToTrackingEvent&) const
 	{
 		std::cout << "Cannot close. The door is already closed!" << std::endl;
 		return {};
@@ -80,18 +107,18 @@ struct TrackingState
 
 struct CalibrationState
 {
-	Nothing state_handler(const StartCalibrationEvent&) const
+	Nothing state_handler(const IdleToCalibrationEvent&) const
 	{
 		std::cout << "Cannot open. The door is already open!" << std::endl;
 		return {};
 	}
 
-	TransitionTo<TrackingState> state_handler(const StartTrackingEvent&) const
+	TransitionTo<IdleState> state_handler(const CalibrationToIdleEvent&) const
 	{
-		std::cout << "Closing the door..." << std::endl;
+		std::cout << "Transitioning from CalibrationState to IdleState..." << std::endl;
 		return {};
 	}
 };
 
-using CaptureStateManager = state_machine<TrackingState, CalibrationState>;
+using CaptureStateManager = state_machine<IdleState, TrackingState, CalibrationState>;
 

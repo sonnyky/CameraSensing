@@ -192,7 +192,7 @@ void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
 	for (int i = 0; i < points.size(); i++) {
-		circle(projectorImage, points[i], radius, CvScalar(255, 255, 255), -1, 8, 0);
+		circle(projectorImage, points[i], radius, Scalar(255, 255, 255), -1, 8, 0);
 	}
 	
 }
@@ -201,7 +201,7 @@ void Tinker::calibration::process_image_for_circle_detection(Mat img)
 {
 
 	if (img.type() != CV_8UC1) {
-		cvtColor(img, processedImg, CV_RGB2GRAY);
+		cvtColor(img, processedImg, COLOR_RGB2GRAY);
 	}
 	else {
 		processedImg = img;
