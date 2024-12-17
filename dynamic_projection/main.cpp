@@ -60,6 +60,11 @@ int main(int argc, char* argv[])
 		std::visit(Visitor{}, v);
 		
 		Tinker::capture frame_capture("webcam", 0);
+		cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
+
+		capture_state.transition_to<CalibrationState>();
+		v = capture_state.get_current_state<std::variant<IdleState, TrackingState, CalibrationState>>();
+		std::visit(Visitor{}, v);
 
 
 #pragma endregion
@@ -74,9 +79,9 @@ int main(int argc, char* argv[])
 
 		// move the window to the second display 
 		// (assuming the two displays are top aligned)
-		namedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
-		moveWindow("ProjectionWindow", width_first, height_first);
-		setWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
+		//namedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
+		//moveWindow("ProjectionWindow", width_first, height_first);
+		//setWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
 
 		// create target image
 		Mat detectionResized = Mat(Size(width_second, height_second), CV_8UC1);
@@ -86,17 +91,27 @@ int main(int argc, char* argv[])
 		
 		Tinker::calibration calibration_manager;
 
-		calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_w, FLAGS_height), Size(640, 480), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
-		calibration_manager.setup_projector_calibration_parameters(Size(1920, 1080), FLAGS_ps, Size(4,5), 80, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 500, 250);
-		calibration_manager.set_projector_static_image_points();
+		//calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_w, FLAGS_height), Size(640, 480), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
+		//calibration_manager.setup_projector_calibration_parameters(Size(1920, 1080), FLAGS_ps, Size(4,5), 80, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 500, 250);
+		//calibration_manager.set_projector_static_image_points();
 #pragma endregion
 
 
 #pragma region Capture and processing loop
 		int processing = 1;
 		do {
+			cv::Mat frame = frame_capture.read(); // Capture the frame
+			if (!frame.empty()) {
+				cv::imshow("raw", frame);
+			}
+			else {
+				std::cerr << "Error: Empty frame received\n";
+			}
 
-			
+			// Necessary to update the OpenCV window and check for user input
+			if (cv::waitKey(10) == 27) { // Exit on 'Esc' key
+				processing = 0;
+			}
 			
 		}while (processing == 1);
 

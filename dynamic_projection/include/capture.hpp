@@ -8,11 +8,12 @@ namespace Tinker {
 	public:
 		capture(const std::string& type, int index);
 		~capture();
+		Mat read();
 
 	private:
 		std::string camera_type;
 		int camera_index;
 		VideoCapture cap;
-
+		Mat frame_image;
 	};
 }
