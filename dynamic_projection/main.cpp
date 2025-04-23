@@ -14,7 +14,7 @@ bool fexists(const std::string& filename) {
 bool ParseAndCheckCommandLine(int argc, char* argv[]) {
 	// ---------------------------Parsing and validation of input args--------------------------------------
 
-	gflags::ParseCommandLineNonHelpFlags(&argc, &argv, true);
+	gflags::ParseCommandLineFlags(&argc, &argv, true);
 	if (FLAGS_h) {
 		showUsage();
 		return false;
@@ -42,6 +42,11 @@ int main(int argc, char* argv[])
 
 		struct Visitor
 		{
+			cv::Mat& frame;
+			Tinker::calibration& calib;
+
+			Visitor(cv::Mat& f, Tinker::calibration& c) : frame(f), calib(c) {}
+
 			void operator()(IdleState* t)
 			{
 				cout << " in idle state " << endl;
@@ -56,17 +61,11 @@ int main(int argc, char* argv[])
 			}
 		};
 
-		std::variant<IdleState *, TrackingState * , CalibrationState * > v = capture_state.get_current_state<std::variant<IdleState, TrackingState, CalibrationState>>();
-		std::visit(Visitor{}, v);
-		
 		Tinker::capture frame_capture("webcam", 0);
 		cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
 
 		capture_state.transition_to<CalibrationState>();
-		v = capture_state.get_current_state<std::variant<IdleState, TrackingState, CalibrationState>>();
-		std::visit(Visitor{}, v);
-
-
+	
 #pragma endregion
 
 #pragma region opencv window
@@ -91,7 +90,7 @@ int main(int argc, char* argv[])
 		
 		Tinker::calibration calibration_manager;
 
-		//calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_w, FLAGS_height), Size(640, 480), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
+		calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_pattern_width, FLAGS_pattern_height), Size(640, 480), FLAGS_pattern_type, 1.0, 1.0, FLAGS_minimum_frames, FLAGS_delay_between_frames, Tinker::DETECTION, FLAGS_write_points, FLAGS_write_extrinsics, 0, FLAGS_camera_calib_filename);
 		//calibration_manager.setup_projector_calibration_parameters(Size(1920, 1080), FLAGS_ps, Size(4,5), 80, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 500, 250);
 		//calibration_manager.set_projector_static_image_points();
 #pragma endregion
@@ -107,6 +106,8 @@ int main(int argc, char* argv[])
 			else {
 				std::cerr << "Error: Empty frame received\n";
 			}
+
+			std::visit(Visitor{ frame, calibration_manager }, capture_state.get_current_state<IdleState, TrackingState, CalibrationState>());
 
 			// Necessary to update the OpenCV window and check for user input
 			if (cv::waitKey(10) == 27) { // Exit on 'Esc' key

@@ -2,8 +2,12 @@
 #include "projector_calibration.hpp"
 
 namespace Tinker {
+
+	using system_clock = std::chrono::system_clock;
 	//enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2 , DYNAMIC_DETECTION = 3 };
-	class calibration {
+	
+	class calibration{
+	
 	public:
 		calibration();
 		~calibration();
@@ -32,6 +36,10 @@ namespace Tinker {
 
 		void load(string cameraConfig, string projectorConfig, string extrinsicsConfig);
 		
+		// Capture and decide if latest frame is a new frame
+		bool accept_new_frame(cv::Mat camMat);
+
+
 		bool add_projected(cv::Mat img, cv::Mat processedImg);
 
 		const cv::Mat & get_cam_to_proj_rotation() { return rotCamToProj; }
@@ -55,6 +63,14 @@ namespace Tinker {
 		void start_projector_calibration();
 
 	private:
+
+		Mat prev_camera_frame;
+		double diff_mean;
+		std::chrono::time_point<std::chrono::system_clock> last_frame_time;
+		double elapsed_time;
+		double min_images_diff;
+		double min_elapsed_time;
+
 		camera_calibration camera_calibrator;
 		projector_calibration projector_calibrator;
 		Mat camera_matrix;

@@ -1,6 +1,8 @@
 #include "include\calibration.hpp"
 
-Tinker::calibration::calibration()
+Tinker::calibration::calibration():
+	min_images_diff(4.0),
+	min_elapsed_time(2.0)
 {
 	camera_is_calibrated = false;
 	mode = STANDBY;
@@ -26,7 +28,7 @@ void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, S
 		cameraId_,
 		outputFileName_
 	);
-
+	last_frame_time = system_clock::now();
 	camera_calibrator.setup_candidate_object_points();
 
 	// check for previous calibration files with the same file name
@@ -66,6 +68,26 @@ void Tinker::calibration::load(string cameraConfig, string projectorConfig, stri
 	camera_calibrator.load(cameraConfig);
 	projector_calibrator.load(projectorConfig);
 	loadExtrinsics(extrinsicsConfig);
+}
+
+bool Tinker::calibration::accept_new_frame(cv::Mat camMat)
+{
+	Mat diffMat;
+
+	absdiff(prev_camera_frame, camMat, diffMat);
+	diff_mean = mean(Mat(mean(diffMat)))[0];
+	camMat.copyTo(prev_camera_frame);
+
+	using namespace std::chrono;
+
+	std::chrono::time_point<system_clock> latest_frame_time = system_clock::now();
+	duration<double> elapsed_seconds = latest_frame_time - last_frame_time;
+
+	Scalar m = mean(diffMat);  // (meanB, meanG, meanR)
+	double diff_mean = (m[0] + m[1] + m[2]) / 3.0;
+
+
+	return min_elapsed_time < elapsed_seconds.count() && min_images_diff > diff_mean;
 }
 
 void Tinker::calibration::loadExtrinsics(string filename, bool absolute)

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <iostream>
+#include <chrono>
+#include <thread>
 #include <vector>
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
@@ -100,7 +102,7 @@ namespace Tinker {
 
 #pragma region camera calibration variables
 		Size boardSize, imageSize;
-		float squareSize, aspectRatio;
+		float patternLengthInRealUnits, aspectRatio;
 		Mat cameraMatrix, distCoeffs;
 		string outputFilename;
 
@@ -114,7 +116,7 @@ namespace Tinker {
 		bool videofile;
 		int delay;
 		clock_t prevTimestamp = 0;
-		int mode = DETECTION;
+		int calibrationStatus = DETECTION;
 		int cameraId = 0;
 		vector<string> imageList;
 		String pattern = "chessboard";

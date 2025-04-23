@@ -23,16 +23,16 @@ static const char no_show_processed_video[] = "Optional. Do not show processed v
 static const char raw_output_message[] = "Optional. Output inference results as raw values.";
 DEFINE_bool(h, false, help_message);
 
-DEFINE_uint64(w, 7, help_message);
-DEFINE_uint64(height, 4, help_message);
-DEFINE_string(pt, "chessboard", video_message);
-DEFINE_uint64(n, 10, help_message);
-DEFINE_uint64(d, 1000, help_message);
+DEFINE_uint64(pattern_width, 9, help_message);
+DEFINE_uint64(pattern_height, 6, help_message);
+DEFINE_string(pattern_type, "chessboard", video_message);
+DEFINE_uint64(minimum_frames, 10, help_message);
+DEFINE_uint64(delay_between_frames, 1000, help_message);
 DEFINE_uint64(s, 1, help_message);
-DEFINE_string(o, "camera_params.xml", video_message);
+DEFINE_string(camera_calib_filename, "camera_params.xml", video_message);
 DEFINE_string(ps, "projector_params.xml", video_message);
-DEFINE_bool(op, false, help_message);
-DEFINE_bool(oe, true, help_message);
+DEFINE_bool(write_points, false, help_message);
+DEFINE_bool(write_extrinsics, true, help_message);
 DEFINE_uint64(zt, 8, help_message);
 DEFINE_bool(su, true, help_message);
 
