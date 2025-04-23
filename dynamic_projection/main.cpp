@@ -51,13 +51,13 @@ int main(int argc, char* argv[])
 			{
 				cout << " in idle state " << endl;
 			}
+			void operator()(CalibrationState* c)
+			{
+				calib.calibrate_camera(frame);
+			}
 			void operator()(TrackingState *  t)
 			{
 				cout<< " in tracking state "<< endl;
-			}
-			void operator()(CalibrationState * c)
-			{
-				cout << " in calibration state " << endl;
 			}
 		};
 

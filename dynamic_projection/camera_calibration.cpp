@@ -29,8 +29,6 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 
 void Tinker::camera_calibration::calibrate(Mat image_)
 {
-	if (calibrationStatus != CAPTURING) return;
-
 	Mat viewGray;
 
 	Pattern calibPattern = CHESSBOARD;
@@ -61,7 +59,7 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 	if (calibPattern == CHESSBOARD && found) cornerSubPix(viewGray, pointbuf, Size(11, 11),
 		Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
 
-	if (calibrationStatus == CAPTURING && found && (clock() - prevTimestamp > delay*1e-3*CLOCKS_PER_SEC))
+	if (found && (clock() - prevTimestamp > delay*1e-3*CLOCKS_PER_SEC))
 	{
 		imagePoints.push_back(pointbuf);
 		prevTimestamp = clock();
@@ -71,7 +69,7 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 	if (found)
 		drawChessboardCorners(image_, boardSize, Mat(pointbuf), found);
 
-	if (calibrationStatus == CAPTURING && imagePoints.size() >= (unsigned)nframes)
+	if (imagePoints.size() >= (unsigned)nframes)
 	{
 		cout << "got enough points" << endl;
 		if (runAndSave(outputFilename, imagePoints, imageSize,
