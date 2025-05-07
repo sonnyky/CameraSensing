@@ -66,9 +66,10 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 		//blink = capture.isOpened();
 	}
 
-	if (found)
+	if (found) {
 		drawChessboardCorners(image_, boardSize, Mat(pointbuf), found);
-
+		bool success = cv::imwrite("last_frame.jpg", image_);
+	}
 	if (imagePoints.size() >= (unsigned)nframes)
 	{
 		cout << "got enough points" << endl;
