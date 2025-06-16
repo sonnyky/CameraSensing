@@ -44,16 +44,21 @@ int main(int argc, char* argv[])
 		{
 			cv::Mat& frame;
 			Tinker::calibration& calib;
+			CaptureStateManager& capture_state;
 
-			Visitor(cv::Mat& f, Tinker::calibration& c) : frame(f), calib(c) {}
+			Visitor(cv::Mat& f, Tinker::calibration& c, CaptureStateManager& s) : frame(f), calib(c), capture_state(s) {}
 
 			void operator()(IdleState* t)
 			{
 				cout << " in idle state " << endl;
 			}
-			void operator()(CalibrationState* c)
+			void operator()(CameraCalibrationState* c)
 			{
-				calib.calibrate_camera(frame);
+				bool success = calib.calibrate_camera(frame);
+				if (success) {
+					std::cout << "Calibration complete. Switching to Static Projector Calibration State." << std::endl;
+					capture_state.transition_to<TrackingState>();
+				}
 			}
 			void operator()(TrackingState *  t)
 			{
@@ -64,7 +69,7 @@ int main(int argc, char* argv[])
 		Tinker::capture frame_capture("webcam", 0);
 		cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
 
-		capture_state.transition_to<CalibrationState>();
+		capture_state.transition_to<CameraCalibrationState>();
 	
 #pragma endregion
 
@@ -107,7 +112,7 @@ int main(int argc, char* argv[])
 				std::cerr << "Error: Empty frame received\n";
 			}
 
-			std::visit(Visitor{ frame, calibration_manager }, capture_state.get_current_state<IdleState, TrackingState, CalibrationState>());
+			std::visit(Visitor{ frame, calibration_manager, capture_state }, capture_state.get_current_state());
 
 			// Necessary to update the OpenCV window and check for user input
 			if (cv::waitKey(10) == 27) { // Exit on 'Esc' key

@@ -53,9 +53,9 @@ void Tinker::calibration::set_projector_static_image_points()
 	projector_calibrator.set_static_candidate_image_points();
 }
 
-void Tinker::calibration::calibrate_camera(Mat image)
+bool Tinker::calibration::calibrate_camera(Mat image)
 {
-	camera_calibrator.calibrate(image);
+	return camera_calibrator.calibrate(image);
 }
 
 void Tinker::calibration::switch_to_calibration_mode()

@@ -47,7 +47,7 @@ namespace Tinker {
 			int cameraId_,
 			string outputFileName_);
 
-		void calibrate(Mat image_);
+		bool calibrate(Mat image_);
 
 		void set_to_calibration_mode();
 

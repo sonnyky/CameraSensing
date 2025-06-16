@@ -27,7 +27,7 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	load_camera_matrix(outputFileName_);
 }
 
-void Tinker::camera_calibration::calibrate(Mat image_)
+bool Tinker::camera_calibration::calibrate(Mat image_)
 {
 	Mat viewGray;
 
@@ -79,6 +79,7 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 			writeExtrinsics, writePoints)) {
 			calibrationStatus = CALIBRATED;
 			load_camera_matrix(outputFilename);
+			return true;
 		}
 		else calibrationStatus = DETECTION;
 		
@@ -87,6 +88,8 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 		
 		cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
 	}
+
+	return false;
 
 }
 

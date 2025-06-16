@@ -31,7 +31,7 @@ namespace Tinker {
 
 		void set_projector_static_image_points();
 
-		void calibrate_camera(Mat image);
+		bool calibrate_camera(Mat image);
 		void switch_to_calibration_mode();
 
 		void load(string cameraConfig, string projectorConfig, string extrinsicsConfig);

@@ -115,6 +115,12 @@ void Tinker::projector_calibration::load_calibration_parameters(string fileName)
 	}
 }
 
+void Tinker::projector_calibration::reset_boards()
+{
+	objectPoints.clear();
+	imagePoints.clear();
+}
+
 double Tinker::projector_calibration::computeReprojectionErrors(const vector<vector<Point3f>>& objectPoints, const vector<vector<Point2f>>& imagePoints, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const Mat & cameraMatrix, const Mat & distCoeffs, vector<float>& perViewErrors)
 {
 	vector<Point2f> imagePoints2;

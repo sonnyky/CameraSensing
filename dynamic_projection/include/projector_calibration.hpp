@@ -42,6 +42,8 @@ namespace Tinker {
 
 		void load_calibration_parameters(string fileName);
 
+		void reset_boards();
+
 	private:
 		// The cameraMatrix here is actually the projector intrinsics matrix. Since we are using inverse camera calibration, I'm leaving it named as cameraMatrix
 		Mat cameraMatrix, distCoeffs;
