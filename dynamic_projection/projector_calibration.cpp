@@ -46,6 +46,9 @@ void Tinker::projector_calibration::start_projector_calibration()
 	mode = PROJECTOR_CAPTURING;
 }
 
+/*
+when image points and projected object points pairs are obtained on the camera, we use PnP to get board rotations and translations
+*/
 bool Tinker::projector_calibration::calibrate()
 {
 	cout << "mode is : " << mode << endl;

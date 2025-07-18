@@ -56,7 +56,23 @@ int main(int argc, char* argv[])
 			{
 				bool success = calib.calibrate_camera(frame);
 				if (success) {
-					std::cout << "Calibration complete. Switching to Static Projector Calibration State." << std::endl;
+					std::cout << "Camera Calibration complete. Switching to Static Projector Calibration State." << std::endl;
+					capture_state.transition_to<StaticProjectorCalibrationState>();
+				}
+			}
+			void operator()(StaticProjectorCalibrationState* c)
+			{
+				//bool success = calib.calibrate_camera(frame);
+				if (success) {
+					std::cout << "Static Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
+					capture_state.transition_to<DynamicProjectorCalibrationState>();
+				}
+			}
+			void operator()(DynamicProjectorCalibrationState* c)
+			{
+				//bool success = calib.calibrate_camera(frame);
+				if (success) {
+					std::cout << "Dynamic Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
 					capture_state.transition_to<TrackingState>();
 				}
 			}

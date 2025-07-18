@@ -114,10 +114,13 @@ struct IdleToTrackingEvent
 {
 };
 
-struct CalibrationToIdleEvent
-{};
+struct DynamicProjectorCalibrationToTrackingEvent{};
+struct CameraCalibrationToStaticProjectorCalibrationEvent {};
+struct StaticProjectorCalibrationToDynamicProjectorCalibrationEvent{};
 
 struct TrackingToIdleEvent{};
+struct StaticProjectorCalibrationState;
+struct DynamicProjectorCalibrationState;
 
 
 struct TrackingState;
@@ -157,9 +160,41 @@ struct TrackingState
 		return {};
 	}
 
-	Nothing state_handler(const IdleToTrackingEvent&) const
+	Nothing state_handler(...) const
 	{
-		std::cout << "Cannot close. The door is already closed!" << std::endl;
+		std::cout << "Unreachable state" << std::endl;
+		return {};
+	}
+};
+
+struct StaticProjectorCalibrationState {
+	void on_enter() const { std::cout << "Entering StaticProjectorCalibrationState\n"; }
+	void on_exit() const { std::cout << "Exiting StaticProjectorCalibrationState\n"; }
+	Nothing state_handler(...) const
+	{
+		std::cout << "Unreachable state" << std::endl;
+		return {};
+	}
+
+	TransitionTo<DynamicProjectorCalibrationState> state_handler(const StaticProjectorCalibrationToDynamicProjectorCalibrationEvent&) const
+	{
+		std::cout << "Transitioning from StaticProjectorCalibration to DynamicProjectorCalibration..." << std::endl;
+		return {};
+	}
+};
+
+struct DynamicProjectorCalibrationState {
+	void on_enter() const { std::cout << "Entering DynamicProjectorCalibrationState\n"; }
+	void on_exit() const { std::cout << "Exiting DynamicProjectorCalibrationState\n"; }
+	Nothing state_handler(...) const
+	{
+		std::cout << "Unreachable state" << std::endl;
+		return {};
+	}
+
+	TransitionTo<TrackingState> state_handler(const DynamicProjectorCalibrationToTrackingEvent&) const
+	{
+		std::cout << "Transitioning from DynamicProjectorCalibration to Tracking..." << std::endl;
 		return {};
 	}
 };
@@ -168,18 +203,18 @@ struct CameraCalibrationState
 {
 	void on_enter() const { std::cout << "Entering CalibrationState\n"; }
 	void on_exit() const { std::cout << "Exiting CalibrationState\n"; }
-	Nothing state_handler(const IdleToCalibrationEvent&) const
+	Nothing state_handler(...) const
 	{
-		std::cout << "Cannot open. The door is already open!" << std::endl;
+		std::cout << "Unreachable state" << std::endl;
 		return {};
 	}
 
-	TransitionTo<IdleState> state_handler(const CalibrationToIdleEvent&) const
+	TransitionTo<IdleState> state_handler(const CameraCalibrationToStaticProjectorCalibrationEvent&) const
 	{
-		std::cout << "Transitioning from CalibrationState to IdleState..." << std::endl;
+		std::cout << "Transitioning from CamreraCalibrationState to CameraCalibrationToStaticProjectorCalibrationState..." << std::endl;
 		return {};
 	}
 };
 
-using CaptureStateManager = state_machine<IdleState, TrackingState, CameraCalibrationState>;
+using CaptureStateManager = state_machine<IdleState, TrackingState, CameraCalibrationState, StaticProjectorCalibrationState, DynamicProjectorCalibrationState>;
 
