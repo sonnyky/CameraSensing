@@ -159,6 +159,13 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 		composeRT(Raux, Taux, Rp1, Tp1, Rp2, Tp2);
 
 		vector<Point2f> followingPatternImagePoints;
+		if (projector_calibrator.get_camera_matrix().empty()) {
+			std::cerr << "projector_calibrator get_camera_matrix are empty!" << std::endl;
+		}
+
+		if (projector_calibrator.get_dist_coeffs().empty()) {
+			std::cerr << "projector_calibrator get_dist_coeffs are empty!" << std::endl;
+		}
 		projectPoints(Mat(auxObjectPoints),
 			Rp2, Tp2,
 			projector_calibrator.get_camera_matrix(),
@@ -205,12 +212,7 @@ bool Tinker::calibration::set_dynamic_projector_image_points_test(cv::Mat img)
 
 void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 {
-	if (mode != PROJECTOR_CAPTURING && mode != PROJECTOR_CALIBRATED) return;
 	int radius = 20;
-
-	if (mode == PROJECTOR_CALIBRATED) {
-		set_dynamic_projector_image_points(image);
-	}
 	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
 	for (int i = 0; i < points.size(); i++) {
@@ -231,10 +233,8 @@ void Tinker::calibration::process_image_for_circle_detection(Mat img)
 	cv::threshold(processedImg, processedImg, 210, 255, cv::THRESH_BINARY_INV);
 }
 
-void Tinker::calibration::calibrate_projector(Mat img)
+bool Tinker::calibration::calibrate_projector(Mat img)
 {
-	if (mode != PROJECTOR_CAPTURING) return;
-
 	process_image_for_circle_detection(img);
 
 	projector_calibrator.start_projector_calibration();
@@ -246,10 +246,11 @@ void Tinker::calibration::calibrate_projector(Mat img)
 			cout << "projector calibration finished!" << endl;
 			stereo_calibrate();
 
-			mode = PROJECTOR_CALIBRATED;
+			return true;
 		}
 	}
 	imshow("ImageThresholded", processedImg);
+	return false;
 }
 
 void Tinker::calibration::stereo_calibrate()
@@ -283,6 +284,16 @@ void Tinker::calibration::stereo_calibrate()
 
 	cv::Mat fundamentalMatrix, essentialMatrix;
 	cv::Mat rotation3x3;
+
+	if (cameraMatrix.empty() || cameraDistCoeffs.empty()) {
+		std::cerr << "Camera intrinsics are empty!" << std::endl;
+		return;
+	}
+
+	if (projectorMatrix.empty() || projectorDistCoeffs.empty()) {
+		std::cerr << "Camera intrinsics are empty!" << std::endl;
+		return;
+	}
 
 	cv::stereoCalibrate(objectPoints,
 		auxImagePointsCamera,

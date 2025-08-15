@@ -51,7 +51,6 @@ when image points and projected object points pairs are obtained on the camera, 
 */
 bool Tinker::projector_calibration::calibrate()
 {
-	cout << "mode is : " << mode << endl;
 	cout << "imagePoints size : " << imagePoints.size() << endl;
 
 	if (mode != PROJECTOR_CAPTURING) return false;

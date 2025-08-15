@@ -56,7 +56,7 @@ namespace Tinker {
 
 		void process_image_for_circle_detection(Mat img);
 
-		void calibrate_projector(Mat img);
+		bool calibrate_projector(Mat img);
 
 		void stereo_calibrate();
 
