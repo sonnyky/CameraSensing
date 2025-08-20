@@ -86,7 +86,7 @@ bool Tinker::camera_calibration::calibrate(Mat image_)
 	}
 	else {
 		
-		cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
+		//cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
 	}
 
 	return false;

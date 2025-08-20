@@ -26,7 +26,7 @@ DEFINE_bool(h, false, help_message);
 DEFINE_uint64(pattern_width, 9, help_message);
 DEFINE_uint64(pattern_height, 6, help_message);
 DEFINE_string(pattern_type, "chessboard", video_message);
-DEFINE_uint64(minimum_frames, 2, help_message);
+DEFINE_uint64(minimum_frames, 5, help_message);
 DEFINE_uint64(delay_between_frames, 3000, help_message);
 DEFINE_uint64(s, 1, help_message);
 DEFINE_string(camera_calib_filename, "camera_params.xml", video_message);
