@@ -1,11 +1,12 @@
-#include "include\calibration.hpp"
+﻿#include "include\calibration.hpp"
 
-Tinker::calibration::calibration():
+Tinker::calibration::calibration() :
 	min_images_diff(4.0),
-	min_elapsed_time(2.0)
+	min_elapsed_time(2.0),
+	diff_mean(0.0),
+	elapsed_time(0.0)
 {
 	camera_is_calibrated = false;
-	mode = STANDBY;
 }
 
 Tinker::calibration::~calibration()
@@ -42,10 +43,19 @@ void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, S
 	}
 }
 
-void Tinker::calibration::setup_projector_calibration_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, 
-	Pattern _patternType, float px, float py)
+void Tinker::calibration::setup_projector_calibration_parameters(
+	Size _imageSize, 
+	string _outputFileName, 
+	Size _patternSize, 
+	float _squareSize, 
+	int _nFramesBeforeDynamicProjectorCalib, 
+	int _nFramesTotalProjectorCalib,
+	Pattern _patternType, 
+	float px, 
+	float py
+)
 {
-	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _patternType, px, py);
+	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _nFramesBeforeDynamicProjectorCalib, _nFramesTotalProjectorCalib, _patternType, px, py);
 }
 
 void Tinker::calibration::set_projector_static_image_points()
@@ -55,7 +65,12 @@ void Tinker::calibration::set_projector_static_image_points()
 
 bool Tinker::calibration::calibrate_camera(Mat image)
 {
-	return camera_calibrator.calibrate(image);
+	if (!accept_new_frame(image)) {
+		return false;
+	}
+	else {
+		return camera_calibrator.calibrate(image);
+	}
 }
 
 void Tinker::calibration::switch_to_calibration_mode()
@@ -72,22 +87,36 @@ void Tinker::calibration::load(string cameraConfig, string projectorConfig, stri
 
 bool Tinker::calibration::accept_new_frame(cv::Mat camMat)
 {
-	Mat diffMat;
+	if (prev_camera_frame.empty()) {
+		camMat.copyTo(prev_camera_frame);
+		last_frame_time = std::chrono::system_clock::now();
+		std::cout << "first frame" << std::endl;
+		return false;  // Do not accept the first frame
+	}
 
-	absdiff(prev_camera_frame, camMat, diffMat);
-	diff_mean = mean(Mat(mean(diffMat)))[0];
+	cv::Mat diffMat;
+	cv::absdiff(prev_camera_frame, camMat, diffMat);
+
+	cv::Scalar m = mean(diffMat);  // (meanB, meanG, meanR)
+	double diff_mean = (m[0] + m[1] + m[2]) / 3.0;
+
 	camMat.copyTo(prev_camera_frame);
 
 	using namespace std::chrono;
-
 	std::chrono::time_point<system_clock> latest_frame_time = system_clock::now();
 	duration<double> elapsed_seconds = latest_frame_time - last_frame_time;
 
-	Scalar m = mean(diffMat);  // (meanB, meanG, meanR)
-	double diff_mean = (m[0] + m[1] + m[2]) / 3.0;
+	//cout << "diff mean: " << diff_mean  << endl;
+	double elapsed = elapsed_seconds.count();
+	//cout << "elapsed: " << elapsed << endl;
 
+	if ((elapsed > min_elapsed_time) && (diff_mean > min_images_diff)) {
+		camMat.copyTo(prev_camera_frame);
+		last_frame_time = latest_frame_time;
+		return true;
+	}
 
-	return min_elapsed_time < elapsed_seconds.count() && min_images_diff > diff_mean;
+	return false;
 }
 
 void Tinker::calibration::loadExtrinsics(string filename, bool absolute)
@@ -177,39 +206,6 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 	return bPrintedPatternFound;
 }
 
-bool Tinker::calibration::set_dynamic_projector_image_points_test(cv::Mat img)
-{
-	vector<cv::Point2f> chessImgPts;
-	bool bPrintedPatternFound = camera_calibrator.find_board(img);
-	chessImgPts = camera_calibrator.get_detected_board_points();
-
-	if (bPrintedPatternFound) {
-
-		cv::Mat boardRot;
-		cv::Mat boardTrans;
-		camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
-		drawChessboardCorners(img, camera_calibrator.get_board_size(), Mat(chessImgPts), bPrintedPatternFound);
-		Mat Rc1, Tc1, Rc1inv, Tc1inv;
-		Rc1 = boardRot;
-		Tc1 = boardTrans;
-		Mat auxRinv = Mat::eye(3, 3, CV_32F);
-		Rodrigues(Rc1, auxRinv);
-		auxRinv = auxRinv.inv();
-		Rodrigues(auxRinv, Rc1inv);
-		Tc1inv = -auxRinv * Tc1;
-		vector<Point2f> followingPatternImagePoints;
-		projectPoints(Mat(camera_calibrator.get_candidate_object_points()),
-			Rc1, Tc1,
-			camera_calibrator.get_camera_matrix(),
-			camera_calibrator.get_dist_coeffs(),
-			followingPatternImagePoints);
-
-		projector_calibrator.set_candidate_image_points(followingPatternImagePoints);
-	}
-
-	return false;
-}
-
 void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 {
 	int radius = 20;
@@ -221,25 +217,28 @@ void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 	
 }
 
-void Tinker::calibration::process_image_for_circle_detection(Mat img)
+Mat Tinker::calibration::process_image_for_circle_detection(Mat img)
 {
-
+	Mat thresholdedImage;
 	if (img.type() != CV_8UC1) {
-		cvtColor(img, processedImg, COLOR_RGB2GRAY);
+		cvtColor(img, thresholdedImage, COLOR_RGB2GRAY);
 	}
 	else {
-		processedImg = img;
+		img.copyTo(thresholdedImage);
 	}
-	cv::threshold(processedImg, processedImg, 210, 255, cv::THRESH_BINARY_INV);
+	cv::threshold(thresholdedImage, thresholdedImage, 210, 255, cv::THRESH_BINARY_INV);
+	return thresholdedImage;
 }
 
 bool Tinker::calibration::calibrate_projector(Mat img)
 {
-	process_image_for_circle_detection(img);
+	if (!accept_new_frame(img)) {
+		return false;
+	}
 
-	projector_calibrator.start_projector_calibration();
+	Mat processedImage = process_image_for_circle_detection(img);
 
-	if (add_projected(img, processedImg)) {
+	if (add_projected(img, processedImage)) {
 		
 		cout << "calibrating projector inside calibrate_projector"  << endl;
 		if (projector_calibrator.calibrate()) {
@@ -249,7 +248,7 @@ bool Tinker::calibration::calibrate_projector(Mat img)
 			return true;
 		}
 	}
-	imshow("ImageThresholded", processedImg);
+	imshow("ImageThresholded", processedImage);
 	return false;
 }
 
@@ -307,10 +306,6 @@ void Tinker::calibration::stereo_calibrate()
 	cv::Rodrigues(rotation3x3, rotCamToProj);
 }
 
-void Tinker::calibration::start_projector_calibration()
-{
-	mode = PROJECTOR_CAPTURING;
-}
 
 bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 {
@@ -347,6 +342,9 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 			cout << "after add_projected : " << "objectPoints size : " << projector_calibrator.objectPoints.size() << endl;
 
 			return true;
+		}
+		else {
+			return false;
 		}
 	}
 	return false;

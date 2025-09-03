@@ -63,13 +63,8 @@ bool Tinker::camera_calibration::calibrate(Mat image_)
 	{
 		imagePoints.push_back(pointbuf);
 		prevTimestamp = clock();
-		//blink = capture.isOpened();
 	}
 
-	if (found) {
-		drawChessboardCorners(image_, boardSize, Mat(pointbuf), found);
-		bool success = cv::imwrite("last_frame.jpg", image_);
-	}
 	if (imagePoints.size() >= (unsigned)nframes)
 	{
 		cout << "got enough points" << endl;
@@ -86,7 +81,7 @@ bool Tinker::camera_calibration::calibrate(Mat image_)
 	}
 	else {
 		
-		//cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
+		cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
 	}
 
 	return false;

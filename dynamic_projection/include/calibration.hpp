@@ -26,7 +26,8 @@ namespace Tinker {
 			int cameraId_,
 			string outputFileName_);
 
-		void setup_projector_calibration_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, 
+		void setup_projector_calibration_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize,
+			int _nFramesBeforeDynamicProjectorCalib, int _nFramesTotalProjectorCalib,
 			Pattern _patternType, float px, float py);
 
 		void set_projector_static_image_points();
@@ -50,17 +51,14 @@ namespace Tinker {
 			const cv::Mat & rotObjToCam,
 			const cv::Mat & transObjToCam);
 		bool set_dynamic_projector_image_points(cv::Mat img);
-		bool set_dynamic_projector_image_points_test(cv::Mat img);
 
 		void draw_projector_pattern(Mat image, Mat projectorImage);
 
-		void process_image_for_circle_detection(Mat img);
+		Mat process_image_for_circle_detection(Mat img);
 
 		bool calibrate_projector(Mat img);
 
 		void stereo_calibrate();
-
-		void start_projector_calibration();
 
 	private:
 
@@ -77,9 +75,6 @@ namespace Tinker {
 		Mat camera_projector_extrinsics;
 		Mat projector_matrix;
 		bool camera_is_calibrated;
-		Mat processedImg;
-
-		int mode;
 
 	protected:
 		cv::Mat rotCamToProj;

@@ -93,7 +93,6 @@ int main(int argc, char* argv[])
 			{
 				calib.draw_projector_pattern(frame, projImage);
 				calib.set_dynamic_projector_image_points(frame);
-				calib.set_dynamic_projector_image_points(frame);
 				bool success = calib.calibrate_projector(frame);
 				/*
 				if (success) {
@@ -109,7 +108,7 @@ int main(int argc, char* argv[])
 		};
 
 		Tinker::capture frame_capture("webcam", 0);
-		cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
+		//cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
 
 		capture_state.transition_to<CameraCalibrationState>();
 	
@@ -121,7 +120,7 @@ int main(int argc, char* argv[])
 		Tinker::calibration calibration_manager;
 
 		calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_pattern_width, FLAGS_pattern_height), Size(1920, 1080), FLAGS_pattern_type, 36.0, 1.0, FLAGS_minimum_frames, FLAGS_delay_between_frames, Tinker::DETECTION, FLAGS_write_points, FLAGS_write_extrinsics, 0, FLAGS_camera_calib_filename);
-		calibration_manager.setup_projector_calibration_parameters(Size(1920, 1080), FLAGS_ps, Size(4,5), 80, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 0, 0);
+		calibration_manager.setup_projector_calibration_parameters(Size(1920, 1080), FLAGS_ps, Size(4,5), 120, FLAGS_num_boards_before_dynamic_projector_calib, FLAGS_num_boards_final_projector_calib, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 0, 0);
 		calibration_manager.set_projector_static_image_points();
 #pragma endregion
 
@@ -131,7 +130,7 @@ int main(int argc, char* argv[])
 		do {
 			cv::Mat frame = frame_capture.read(); // Capture the frame
 			if (!frame.empty()) {
-				cv::imshow("raw", frame);
+				//cv::imshow("raw", frame);
 				cv::imshow("ProjectionWindow", projection);
 
 			}
