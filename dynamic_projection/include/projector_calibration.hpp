@@ -34,13 +34,13 @@ namespace Tinker {
 		vector<Mat> get_board_rotations() { return boardRotations; }
 		vector<Mat> get_board_translations() { return boardTranslations; }
 
-		void start_projector_calibration();
-
 		bool calibrate();
 
-		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, Pattern _patternType, float px, float py);
+		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, int _nFramesTotalProjectorCalib, Pattern _patternType, float px, float py);
 
 		void load_calibration_parameters(string fileName);
+
+		void reset_boards();
 
 	private:
 		// The cameraMatrix here is actually the projector intrinsics matrix. Since we are using inverse camera calibration, I'm leaving it named as cameraMatrix
@@ -59,10 +59,8 @@ namespace Tinker {
 
 		string outputFileName = "projector_params.xml";
 
-		int nFrames = 10;
-		int mode;
-		clock_t prevTimestamp = 0;
-		int delay;
+		int nFramesBeforeDynamcProjectorCalib;
+		int nFramesTotalProjectorCalib;
 		bool projector_is_calibrated = false;
 
 #pragma region projector calibration methods

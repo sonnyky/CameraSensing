@@ -1,9 +1,9 @@
 #include <iostream>
 #include <sstream>
-#include <librealsense2/rs.hpp>
+#include <fstream>
 #include <state.hpp>
 #include <flags.hpp>
-#include "app.h"
+#include "capture.hpp"
 #include "calibration.hpp"
 
 bool fexists(const std::string& filename) {
@@ -14,7 +14,7 @@ bool fexists(const std::string& filename) {
 bool ParseAndCheckCommandLine(int argc, char* argv[]) {
 	// ---------------------------Parsing and validation of input args--------------------------------------
 
-	gflags::ParseCommandLineNonHelpFlags(&argc, &argv, true);
+	gflags::ParseCommandLineFlags(&argc, &argv, true);
 	if (FLAGS_h) {
 		showUsage();
 		return false;
@@ -32,6 +32,25 @@ int main(int argc, char* argv[])
 	int CALIBRATION_MODE = 1;
 	int MODE = 0;
 
+#pragma region opencv window
+	int width_first = 1920;
+	int height_first = 0;
+
+	// define dimension of the second display
+	int width_second = 1920;
+	int height_second = 1080;
+
+	// move the window to the second display 
+	// (assuming the two displays are top aligned)
+	namedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
+	moveWindow("ProjectionWindow", width_first, height_first);
+	setWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
+
+	// create target image
+	Mat detectionResized = Mat(Size(width_second, height_second), CV_8UC1);
+	Mat projection = Mat(Size(width_second, height_second), CV_8UC1);
+#pragma endregion
+
 	try {
 		if (!ParseAndCheckCommandLine(argc, argv)) {
 			return EXIT_SUCCESS;
@@ -42,167 +61,94 @@ int main(int argc, char* argv[])
 
 		struct Visitor
 		{
+			cv::Mat& frame;
+			cv::Mat& projImage;
+			Tinker::calibration& calib;
+			CaptureStateManager& capture_state;
+
+			Visitor(cv::Mat& f, cv::Mat& pImg, Tinker::calibration& c, CaptureStateManager& s) : frame(f), projImage(pImg), calib(c), capture_state(s) {}
+
+			void operator()(IdleState* t)
+			{
+				cout << " in idle state " << endl;
+			}
+			void operator()(CameraCalibrationState* c)
+			{
+				bool success = calib.calibrate_camera(frame);
+				if (success) {
+					std::cout << "Camera Calibration complete. Switching to Static Projector Calibration State." << std::endl;
+					capture_state.transition_to<StaticProjectorCalibrationState>();
+				}
+			}
+			void operator()(StaticProjectorCalibrationState* c)
+			{
+				calib.draw_projector_pattern(frame, projImage);
+				bool success = calib.calibrate_projector(frame);
+				if (success) {
+					std::cout << "Static Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
+					capture_state.transition_to<DynamicProjectorCalibrationState>();
+				}
+			}
+			void operator()(DynamicProjectorCalibrationState* c)
+			{
+				calib.draw_projector_pattern(frame, projImage);
+				calib.set_dynamic_projector_image_points(frame);
+				bool success = calib.calibrate_projector(frame);
+				/*
+				if (success) {
+					std::cout << "Dynamic Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
+					capture_state.transition_to<TrackingState>();
+				}
+				*/
+			}
 			void operator()(TrackingState *  t)
 			{
 				cout<< " in tracking state "<< endl;
 			}
-			void operator()(CalibrationState * c)
-			{
-				cout << " in calibration state " << endl;
-			}
 		};
 
-		std::variant<TrackingState * , CalibrationState * > v = capture_state.get_current_state<std::variant<TrackingState, CalibrationState>>();
-		std::visit(Visitor{}, v);
+		Tinker::capture frame_capture("webcam", 0);
+		//cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
 
+		capture_state.transition_to<CameraCalibrationState>();
+	
 #pragma endregion
-#pragma region capture_initializations
-		Capture capture;
-		rs2::context ctx;
-
-		ctx.set_devices_changed_callback([&](rs2::event_information& info)
-		{
-			capture.remove_devices(info);
-			for (auto&& dev : info.get_new_devices())
-			{
-				capture.enable_device(dev);
-			}
-		});
-
-		// Initial population of the device list
-		for (auto&& dev : ctx.query_devices()) // Query the list of connected RealSense devices
-		{
-			capture.enable_device(dev);
-		}
-
-		// Align to color frame
-		capture.set_alignment(1);
-
-		bool frame_available = false;
-
-		while (!frame_available) {
-			auto list_of_framesets = capture.get_depth_and_color_frameset();
-			if (list_of_framesets.size() > 0) frame_available = true;
-		}
-
-		vector<rs2_intrinsics> intrinsics = capture.get_cameras_intrinsics();
-		const rs2_intrinsics * camera_intrinsics = &intrinsics[0];
-
-		cout << "intrinsics from realsense camera..." << endl;
-		auto principal_point = std::make_pair(camera_intrinsics->ppx, camera_intrinsics->ppy);
-		auto focal_length = std::make_pair(camera_intrinsics->fx, camera_intrinsics->fy);
-		rs2_distortion model = camera_intrinsics->model;
-
-		std::cout << "Principal Point         : " << principal_point.first << ", " << principal_point.second << std::endl;
-		std::cout << "Focal Length            : " << focal_length.first << ", " << focal_length.second << std::endl;
-		std::cout << "Distortion Model        : " << model << std::endl;
-		std::cout << "Distortion Coefficients : [" << camera_intrinsics->coeffs[0] << "," << camera_intrinsics->coeffs[1] << "," <<
-			camera_intrinsics->coeffs[2] << "," << camera_intrinsics->coeffs[3] << "," << camera_intrinsics->coeffs[4] << "]" << std::endl;
 
 
-#pragma endregion Here we initialize capture parameters and enable devices
-
-#pragma region opencv window
-		int width_first = 1920;
-		int height_first = 0;
-
-		// define dimension of the second display
-		int width_second = 1920;
-		int height_second = 1080;
-
-		// move the window to the second display 
-		// (assuming the two displays are top aligned)
-		cvNamedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
-		moveWindow("ProjectionWindow", width_first, height_first);
-		cvSetWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
-
-		// create target image
-		Mat detectionResized = Mat(Size(width_second, height_second), CV_8UC1);
-		Mat projection = Mat(Size(width_second, height_second), CV_8UC1);
-#pragma endregion
 #pragma region calibration parameters settings and calibration object instantiation
 		
 		Tinker::calibration calibration_manager;
 
-		calibration_manager.setup_camera_calibration_parameters(cvSize(FLAGS_w, FLAGS_height), cvSize(640, 480), FLAGS_pt, 1.0, 1.0, FLAGS_n, FLAGS_d, Tinker::DETECTION, FLAGS_op, FLAGS_oe, 0, FLAGS_o);
-		calibration_manager.setup_projector_calibration_parameters(cvSize(1920, 1080), FLAGS_ps, Size(4,5), 80, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 500, 250);
+		calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_pattern_width, FLAGS_pattern_height), Size(1920, 1080), FLAGS_pattern_type, 36.0, 1.0, FLAGS_minimum_frames, FLAGS_delay_between_frames, Tinker::DETECTION, FLAGS_write_points, FLAGS_write_extrinsics, 0, FLAGS_camera_calib_filename);
+		calibration_manager.setup_projector_calibration_parameters(Size(1920, 1080), FLAGS_ps, Size(4,5), 120, FLAGS_num_boards_before_dynamic_projector_calib, FLAGS_num_boards_final_projector_calib, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 0, 0);
 		calibration_manager.set_projector_static_image_points();
 #pragma endregion
+
+
 #pragma region Capture and processing loop
 		int processing = 1;
 		do {
+			cv::Mat frame = frame_capture.read(); // Capture the frame
+			if (!frame.empty()) {
+				//cv::imshow("raw", frame);
+				cv::imshow("ProjectionWindow", projection);
 
-			auto list_of_framesets = capture.get_depth_and_color_frameset();
-
-			if (list_of_framesets.size() > 0) {
-				int size = list_of_framesets.size();
-
-				for (int i = 0; i < size; i++) {
-					vector<Point2f> pointBuf;
-					Mat view = list_of_framesets[i].color_image;
-					cv::cvtColor(view, view, CV_BGR2RGB);
-					
-#pragma region circle detection
-					Mat gray;
-					cvtColor(view, gray, COLOR_BGR2GRAY);
-					medianBlur(gray, gray, 5);
-					
-#pragma endregion
-
-#pragma region Calibration
-					calibration_manager.calibrate_camera(view);
-
-					calibration_manager.draw_projector_pattern(view, projection);
-					calibration_manager.calibrate_projector(view);
-#pragma endregion
-#pragma region command keys
-					// Command keys
-					if (waitKey(1) == 113) {
-						// press 'q'
-						processing = 0;
-						break;
-					}
-					if (waitKey(1) == 99) {
-						// press 'c'
-						MODE = CALIBRATION_MODE;
-						cout << "going to calibration mode..." << endl;
-						calibration_manager.switch_to_calibration_mode();
-					}
-					if (waitKey(1) == 112) {
-						// press 'p'
-						cout << "[main] starting projector calibration " << endl;
-						calibration_manager.start_projector_calibration();
-					}
-#pragma endregion
-					
-#pragma region Display result
-					
-
-					// Get 3D coordinates of projected circles in camera coordinate system.
-
-
-					// Get 3D coordinates of projected circles from board coordinates. Back projection
-
-					// computing the instrinsics of the projector because you have 3d points (the projected circles) in world coordinates, and their respective “projection” in projector “image” plane.
-
-					// Matrix decomposition to get K, R, T of projector
-
-					/*
-					Finally, we can start computing the extrinsics of the camera-projector (because basically we have 3d points in “world coordinates” (the board), 
-					which are the projected circles, and also their projection (2d points) in the camera image and projector “image”). 
-					This means you can use the standard stereo calibration routine in openCV
-					*/
-
-					// show image
-					imshow("My Window", view);
-					imshow("ProjectionWindow", projection);
-#pragma endregion
-
-				}
 			}
+			else {
+				std::cerr << "Error: Empty frame received\n";
+			}
+
+			std::visit(Visitor{ frame, projection, calibration_manager, capture_state }, capture_state.get_current_state());
+
+			// Necessary to update the OpenCV window and check for user input
+			if (cv::waitKey(10) == 27) { // Exit on 'Esc' key
+				processing = 0;
+			}
+			
 		}while (processing == 1);
 
 #pragma endregion Capture and processing loop
+
 	}
 	catch (std::exception& ex) {
 		std::cout << ex.what() << std::endl;

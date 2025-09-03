@@ -7,7 +7,7 @@ Tinker::camera_calibration::camera_calibration()
 
 Tinker::camera_calibration::~camera_calibration()
 {
-	mode = CAPTURING;
+	calibrationStatus = CAPTURING;
 }
 
 void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, std::string outputFileName_)
@@ -15,11 +15,11 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	boardSize = boardSize_;
 	imageSize = imageSize_;
 	pattern = pattern_;
-	squareSize = squareSize_;
+	patternLengthInRealUnits = squareSize_;
 	aspectRatio = aspectRatio_;
 	nframes = nFrames_;
 	delay = delay_;
-	mode = mode_;
+	calibrationStatus = mode_;
 	writePoints = writePoints_;
 	writeExtrinsics = writeExtrinsics_;
 	cameraId = cameraId_;
@@ -27,10 +27,8 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	load_camera_matrix(outputFileName_);
 }
 
-void Tinker::camera_calibration::calibrate(Mat image_)
+bool Tinker::camera_calibration::calibrate(Mat image_)
 {
-	if (mode != CAPTURING) return;
-
 	Mat viewGray;
 
 	Pattern calibPattern = CHESSBOARD;
@@ -61,27 +59,24 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 	if (calibPattern == CHESSBOARD && found) cornerSubPix(viewGray, pointbuf, Size(11, 11),
 		Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
 
-	if (mode == CAPTURING && found && (clock() - prevTimestamp > delay*1e-3*CLOCKS_PER_SEC))
+	if (found && (clock() - prevTimestamp > delay*1e-3*CLOCKS_PER_SEC))
 	{
 		imagePoints.push_back(pointbuf);
 		prevTimestamp = clock();
-		//blink = capture.isOpened();
 	}
 
-	if (found)
-		drawChessboardCorners(image_, boardSize, Mat(pointbuf), found);
-
-	if (mode == CAPTURING && imagePoints.size() >= (unsigned)nframes)
+	if (imagePoints.size() >= (unsigned)nframes)
 	{
 		cout << "got enough points" << endl;
 		if (runAndSave(outputFilename, imagePoints, imageSize,
-			boardSize, calibPattern, squareSize, aspectRatio,
+			boardSize, calibPattern, patternLengthInRealUnits, aspectRatio,
 			flags, cameraMatrix, distCoeffs,
 			writeExtrinsics, writePoints)) {
-			mode = CALIBRATED;
+			calibrationStatus = CALIBRATED;
 			load_camera_matrix(outputFilename);
+			return true;
 		}
-		else mode = DETECTION;
+		else calibrationStatus = DETECTION;
 		
 	}
 	else {
@@ -89,13 +84,15 @@ void Tinker::camera_calibration::calibrate(Mat image_)
 		cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
 	}
 
+	return false;
+
 }
 
 void Tinker::camera_calibration::set_to_calibration_mode()
 {
 	imagePoints.clear();
 	prevTimestamp = 0;
-	mode = CAPTURING;
+	calibrationStatus = CAPTURING;
 }
 
 void Tinker::camera_calibration::undistort_image(Mat image)
@@ -107,7 +104,7 @@ void Tinker::camera_calibration::setup_candidate_object_points()
 	candidateObjectPts.clear();
 	for (int i = 0; i < boardSize.height; i++) {
 		for (int j = 0; j < boardSize.width; j++) {
-			candidateObjectPts.push_back(cv::Point3f(float(j * squareSize), float(i * squareSize), 0));
+			candidateObjectPts.push_back(cv::Point3f(float(j * patternLengthInRealUnits), float(i * patternLengthInRealUnits), 0));
 		}
 	}
 }
