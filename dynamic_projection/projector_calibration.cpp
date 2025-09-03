@@ -15,12 +15,25 @@ void Tinker::projector_calibration::load(string projector_config)
 void Tinker::projector_calibration::set_static_candidate_image_points()
 {
 	candidate_image_points.clear();
-	Point2f p;
-	//cout << "circlePatternSize : " << circlePatternSize.height << ", " << circlePatternSize.width << endl;
+
+	const int screenWidth = 1920;
+	const int screenHeight = 1080;
+	const float spacing = squareSize;
+
+	// Calculate total width and height of the asymmetric circle grid
+	float patternWidth = ((2 * circlePatternSize.width) - 1) * spacing;
+	float patternHeight = (circlePatternSize.height - 1) * spacing;
+
+	// Center the pattern in the middle of the projector screen
+	patternPosition.x = (screenWidth - patternWidth) / 2.0f;
+	patternPosition.y = (screenHeight - patternHeight) / 2.0f;
+
+	// Generate circle points
 	for (int i = 0; i < circlePatternSize.height; i++) {
 		for (int j = 0; j < circlePatternSize.width; j++) {
-			p.x = patternPosition.x + float(((2 * j) + (i % 2)) * squareSize);
-			p.y = patternPosition.y + float(i * squareSize);
+			Point2f p;
+			p.x = patternPosition.x + ((2 * j) + (i % 2)) * spacing;
+			p.y = patternPosition.y + i * spacing;
 			candidate_image_points.push_back(p);
 		}
 	}
