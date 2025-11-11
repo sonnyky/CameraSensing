@@ -65,22 +65,64 @@ bool Tinker::camera_calibration::calibrate(Mat image_)
 		prevTimestamp = clock();
 	}
 
+	// Once we have more points than the threshold we run calibration on the aggregated points to get a global model
 	if (imagePoints.size() >= (unsigned)nframes)
 	{
-		cout << "got enough points" << endl;
-		if (runAndSave(outputFilename, imagePoints, imageSize,
-			boardSize, calibPattern, patternLengthInRealUnits, aspectRatio,
-			flags, cameraMatrix, distCoeffs,
-			writeExtrinsics, writePoints)) {
-			calibrationStatus = CALIBRATED;
+		vector<Mat> rvecs, tvecs;
+		vector<float> perViewRms;
+		double totalAvgErr = 0;
+
+		// here cameraMatrix and distCoeffs are the calibration results from the aggregated image points
+		bool calibSuccess = runCalibration(imagePoints, imageSize, boardSize, calibPattern, patternLengthInRealUnits,
+			aspectRatio, flags, cameraMatrix, distCoeffs,
+			rvecs, tvecs, perViewRms, totalAvgErr);
+		printf("%s. avg reprojection error for this batch = %.2f\n",
+			calibSuccess ? "Calibration succeeded" : "Calibration failed",
+			totalAvgErr);
+
+		//perViewRms now hold rms errors for each view. The index corresponds to the index of imagePoints.
+		// we filter the imagePoints with rms higher than the threshold
+		float threshold = 0.8f;
+
+		std::vector<std::vector<cv::Point2f>> filteredImagePoints;
+		std::vector<float> filteredRms;
+		for (size_t i = 0; i < perViewRms.size(); ++i) {
+			if (perViewRms[i] <= threshold) {
+				filteredImagePoints.push_back(imagePoints[i]);
+				filteredRms.push_back(perViewRms[i]);
+			}
+		}
+
+		imagePoints.swap(filteredImagePoints);
+		perViewRms.swap(filteredRms);
+
+		// if we still have enough points after removing high rms views then we run the calibration one more time for the final camera values
+		// if we don't have enouhgh points then we start taking views again
+		if (imagePoints.size() >= (unsigned)nframes)
+		{
+			bool calibSuccess = runCalibration(imagePoints, imageSize, boardSize, calibPattern, patternLengthInRealUnits,
+				aspectRatio, flags, cameraMatrix, distCoeffs,
+				rvecs, tvecs, perViewRms, totalAvgErr);
+			printf("%s. avg reprojection error for this batch = %.2f\n",
+				calibSuccess ? "Final camera Calibration succeeded" : "Final Camera Calibration failed",
+				totalAvgErr);
+
+			saveCameraParams(outputFilename, imageSize,
+				boardSize, patternLengthInRealUnits, aspectRatio,
+				flags, cameraMatrix, distCoeffs,
+				writeExtrinsics ? rvecs : vector<Mat>(),
+				writeExtrinsics ? tvecs : vector<Mat>(),
+				writeExtrinsics ? perViewRms : vector<float>(),
+				writePoints ? imagePoints : vector<vector<Point2f> >(),
+				totalAvgErr);
 			load_camera_matrix(outputFilename);
 			return true;
 		}
-		else calibrationStatus = DETECTION;
-		
+		else {
+			return false;
+		}		
 	}
 	else {
-		
 		cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
 	}
 
@@ -242,7 +284,10 @@ void Tinker::camera_calibration::calcChessboardCorners(Size boardSize, float squ
 	}
 }
 
-bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, int flags, Mat & cameraMatrix, Mat & distCoeffs, vector<Mat>& rvecs, vector<Mat>& tvecs, vector<float>& reprojErrs, double & totalAvgErr)
+bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoints, 
+	Size imageSize, Size boardSize, Pattern patternType, float squareSize, 
+	float aspectRatio, int flags, Mat & cameraMatrix, Mat & distCoeffs, 
+	vector<Mat>& rvecs, vector<Mat>& tvecs, vector<float>& perViewRms, double & totalAvgErr)
 {
 	cameraMatrix = Mat::eye(3, 3, CV_64F);
 	if (flags & CALIB_FIX_ASPECT_RATIO)
@@ -257,15 +302,14 @@ bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoi
 
 	double rms = calibrateCamera(objectPoints, imagePoints, imageSize, cameraMatrix,
 		distCoeffs, rvecs, tvecs, flags | CALIB_FIX_K4 | CALIB_FIX_K5);
-	///*|CALIB_FIX_K3*/|CALIB_FIX_K4|CALIB_FIX_K5);
 	printf("RMS error reported by calibrateCamera: %g\n", rms);
 
-	bool ok = checkRange(cameraMatrix) && checkRange(distCoeffs);
+	bool matricesValid = checkRange(cameraMatrix) && checkRange(distCoeffs);
 
 	totalAvgErr = computeReprojectionErrors(objectPoints, imagePoints,
-		rvecs, tvecs, cameraMatrix, distCoeffs, reprojErrs);
+		rvecs, tvecs, cameraMatrix, distCoeffs, perViewRms);
 
-	return ok;
+	return matricesValid;
 }
 
 void Tinker::camera_calibration::saveCameraParams(const string & filename, Size imageSize, Size boardSize, float squareSize, float aspectRatio, int flags, const Mat & cameraMatrix, const Mat & distCoeffs, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const vector<float>& reprojErrs, const vector<vector<Point2f>>& imagePoints, double totalAvgErr)
@@ -340,30 +384,4 @@ void Tinker::camera_calibration::saveCameraParams(const string & filename, Size 
 		}
 		fs << "image_points" << imagePtMat;
 	}
-}
-
-bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const vector<vector<Point2f>>& imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, int flags, Mat & _cameraMatrix, Mat & distCoeffs, bool writeExtrinsics, bool writePoints)
-{
-	vector<Mat> rvecs, tvecs;
-	vector<float> reprojErrs;
-	double totalAvgErr = 0;
-
-	bool ok = runCalibration(imagePoints, imageSize, boardSize, patternType, squareSize,
-		aspectRatio, flags, _cameraMatrix, distCoeffs,
-		rvecs, tvecs, reprojErrs, totalAvgErr);
-	printf("%s. avg reprojection error = %.2f\n",
-		ok ? "Calibration succeeded" : "Calibration failed",
-		totalAvgErr);
-
-	if (ok) {
-		saveCameraParams(outputFilename, imageSize,
-			boardSize, squareSize, aspectRatio,
-			flags, _cameraMatrix, distCoeffs,
-			writeExtrinsics ? rvecs : vector<Mat>(),
-			writeExtrinsics ? tvecs : vector<Mat>(),
-			writeExtrinsics ? reprojErrs : vector<float>(),
-			writePoints ? imagePoints : vector<vector<Point2f> >(),
-			totalAvgErr);
-	}
-	return ok;
 }
