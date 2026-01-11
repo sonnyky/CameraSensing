@@ -301,7 +301,8 @@ void Tinker::calibration::stereo_calibrate()
 		projectorMatrix, projectorDistCoeffs,
 		camera_calibrator.get_image_size(),
 		rotation3x3, transCamToProj,
-		essentialMatrix, fundamentalMatrix);
+		essentialMatrix, fundamentalMatrix,
+		CALIB_FIX_INTRINSIC);
 
 	cv::Rodrigues(rotation3x3, rotCamToProj);
 }

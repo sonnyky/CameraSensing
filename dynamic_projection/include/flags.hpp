@@ -10,33 +10,39 @@
 /// @brief Message for help argument
 static const char help_message[] = "Print a usage message.";
 
-/// @brief Message for video argument
-static const char video_message[] = "Required. Path to a video. Default value is \"cam\" to work with camera.";
+/// @brief Message for calibration pattern dimensions
+static const char pattern_dimensions_message[] = "Required. Use pattern_width and pattern_height to specify calibration pattern dimensions.";
 
-/// @brief Message for performance counter
-static const char performance_counter_message[] = "Optional. Enable per-layer performance report.";
+/// @brief Message for pattern type
+static const char pattern_type_message[] = "Required. Specifies the calibration pattern type, defaults to chessboard.";
 
-/// @brief Message for not showing processed video
-static const char no_show_processed_video[] = "Optional. Do not show processed video.";
+static const char nboards_before_dynamic_message[] = "Required. Specifies the number of calibration images necessary before moving to dynamic projector calibration.";
 
-/// @brief Message for raw output
-static const char raw_output_message[] = "Optional. Output inference results as raw values.";
+static const char nboards_final_proj_calib_message[] = "Required. Specifies the number of calibration images necessary to finish projector calibration.";
+
+static const char minimum_frames_message[] = "Required. Specifies the number of calibration images necessary for camera calibration.";
+
+static const char delay_frames_message[] = "Required. Specifies the time in ms to delay frame capture during camera and projector calibration.";
+
+static const char camera_filename_message[] = "Required. Specifies the filename to save camera parameters after calibration.";
+
+static const char projector_filename_message[] = "Required. Specifies the filename to save projector intrinsics parameters after calibration.";
+
+
+
+
 DEFINE_bool(h, false, help_message);
-
 DEFINE_uint64(pattern_width, 9, help_message);
 DEFINE_uint64(pattern_height, 6, help_message);
-DEFINE_string(pattern_type, "chessboard", video_message);
-DEFINE_uint64(num_boards_before_dynamic_projector_calib, 5, help_message);
-DEFINE_uint64(num_boards_final_projector_calib, 10, help_message);
-DEFINE_uint64(minimum_frames, 5, help_message);
-DEFINE_uint64(delay_between_frames, 1000, help_message);
-DEFINE_uint64(s, 1, help_message);
-DEFINE_string(camera_calib_filename, "camera_params.xml", video_message);
-DEFINE_string(ps, "projector_params.xml", video_message);
+DEFINE_string(pattern_type, "chessboard", pattern_type_message);
+DEFINE_uint64(num_boards_before_dynamic_projector_calib, 5, nboards_before_dynamic_message);
+DEFINE_uint64(num_boards_final_projector_calib, 10, nboards_final_proj_calib_message);
+DEFINE_uint64(minimum_frames, 5, minimum_frames_message);
+DEFINE_uint64(delay_between_frames, 1000, delay_frames_message);
+DEFINE_string(camera_filename, "camera_params.xml", camera_filename_message);
+DEFINE_string(projector_filename, "projector_params.xml", projector_filename_message);
 DEFINE_bool(write_points, false, help_message);
 DEFINE_bool(write_extrinsics, true, help_message);
-DEFINE_uint64(zt, 8, help_message);
-DEFINE_bool(su, true, help_message);
 
 
 /**	
@@ -47,10 +53,9 @@ static void showUsage() {
 	std::cout << "dynami_projection [OPTION]" << std::endl;
 	std::cout << "Options:" << std::endl;
 	std::cout << std::endl;
-	std::cout << "    -h                         " << help_message << std::endl;
-	std::cout << "    -i \"<path>\"                " << video_message << std::endl;
-	std::cout << "    -pc                        " << performance_counter_message << std::endl;
-	std::cout << "    -no_show                   " << no_show_processed_video << std::endl;
-	std::cout << "    -r                         " << raw_output_message << std::endl;
+	std::cout << "    -h								" << help_message << std::endl;
+	std::cout << "    -pattern_width, -pattern_height   " << pattern_dimensions_message << std::endl;
+	std::cout << "    -pattern_type								" << pattern_type_message << std::endl;
+
 }
 
