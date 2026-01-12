@@ -28,6 +28,12 @@ namespace Tinker {
 		vector<Point2f> get_candidate_image_points() { return candidate_image_points; }
 		vector<vector<cv::Point3f>> get_object_points() { return objectPoints; }
 
+		// The following parameters save the corresponding camera pose at the same frame projection calibration succeeded
+		vector<Mat> camBoardRotations;
+		vector<Mat> camBoardTranslations;
+
+		vector<vector<cv::Point2f>> frameMeasuredCircleImagePoints;  // one entry per frame
+
 		// object points in the world coordinate system
 		vector<vector<cv::Point3f>> objectPoints;
 
