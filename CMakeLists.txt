@@ -15,7 +15,7 @@ set(GFLAGS_LIB "C:/Users/Sonny/Desktop/Applications/gflags/build/lib/Release/gfl
 # Find OpenCV, you may need to set OpenCV_DIR variable
 # to the absolute path to the directory containing OpenCVConfig.cmake file
 # via the command line or GUI
-set( OpenCV_DIR "C:/Users/Sonny/Desktop/Applications/opencv_build" )
+set( OpenCV_DIR "C:/Users/Sonny/Desktop/Applications/opencv_build/build/install" )
 option( OpenCV_STATIC OFF )
 find_package(OpenCV REQUIRED)
 

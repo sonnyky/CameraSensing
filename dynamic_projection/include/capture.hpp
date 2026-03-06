@@ -1,19 +1,18 @@
-// This class provides utilities to capture from a camera.
+#pragma once
 #include <opencv2/opencv.hpp>
-
-using namespace cv;
+#include <string>
 
 namespace Tinker {
-	class capture {
-	public:
-		capture(const std::string& type, int index);
-		~capture();
-		Mat read();
+    class capture {
+    public:
+        capture(const std::string& type, int index);
+        ~capture();
+        cv::Mat read();
 
-	private:
-		std::string camera_type;
-		int camera_index;
-		VideoCapture cap;
-		Mat frame_image;
-	};
+    private:
+        std::string camera_type;
+        int camera_index = 0;
+        cv::VideoCapture cap;
+        cv::Mat frame_image;
+    };
 }
