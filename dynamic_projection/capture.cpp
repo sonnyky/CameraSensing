@@ -1,19 +1,19 @@
-#include "capture.hpp"
+﻿#include "capture.hpp"
 using namespace std;
 
-Tinker::capture::capture(const std::string& type, int index) : camera_type(type), camera_index(index)
+Tinker::capture::capture(const std::string& type, int index)
+	: camera_type(type), camera_index(index)
 {
+	std::cout << "[capture ctor] this=" << this
+		<< " &cap=" << &cap
+		<< " index=" << camera_index
+		<< " type=" << camera_type << "\n" << std::flush;
+
 	if (camera_type == "webcam") {
-		
-		cap.open(camera_index);
-		cout << "cap open " << endl;
-		if (!cap.isOpened()) {
-			std::cerr << "Error: Could not open webcam with index " << camera_index << "\n";
-		}
-		else {
-			cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
-			cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
-		}
+		std::cout << "[capture ctor] before cap.open\n" << std::flush;
+		bool ok = cap.open(camera_index, cv::CAP_DSHOW);
+		std::cout << "[capture ctor] after cap.open ok=" << ok
+			<< " isOpened=" << cap.isOpened() << "\n" << std::flush;
 	}
 }
 
@@ -24,7 +24,7 @@ Tinker::capture::~capture() {
 	}
 }
 
-Mat Tinker::capture::read()
+cv::Mat Tinker::capture::read()
 {
 	if (cap.isOpened()) {
 		cap >> frame_image; // Capture a frame

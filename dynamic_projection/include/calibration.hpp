@@ -52,7 +52,7 @@ namespace Tinker {
 			const cv::Mat & transObjToCam);
 		bool set_dynamic_projector_image_points(cv::Mat img);
 
-		void draw_projector_pattern(Mat image, Mat projectorImage);
+		void draw_projector_pattern(Mat& projectorImage);
 
 		Mat process_image_for_circle_detection(Mat img);
 

@@ -93,7 +93,8 @@ bool Tinker::calibration::accept_new_frame(cv::Mat camMat)
 		std::cout << "first frame" << std::endl;
 		return false;  // Do not accept the first frame
 	}
-
+	// TODO: Refactor the diff check to see if images are similar to previous frame
+	/*
 	cv::Mat diffMat;
 	cv::absdiff(prev_camera_frame, camMat, diffMat);
 
@@ -115,8 +116,8 @@ bool Tinker::calibration::accept_new_frame(cv::Mat camMat)
 		last_frame_time = latest_frame_time;
 		return true;
 	}
-
-	return false;
+	*/
+	return true;
 }
 
 void Tinker::calibration::loadExtrinsics(string filename, bool absolute)
@@ -173,8 +174,11 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 		Mat Rc1, Tc1, Rc1inv, Tc1inv, Rc2, Tc2, Rp1, Tp1, Rp2, Tp2;
 		Rp1 = projector_calibrator.get_board_rotations().back();
 		Tp1 = projector_calibrator.get_board_translations().back();
-		Rc1 = camera_calibrator.get_board_rotations().back();
-		Tc1 = camera_calibrator.get_board_translations().back();
+
+		// Ensures we are using the camera pose from the same frame as the last projector calibrator frame
+		Rc1 = projector_calibrator.camBoardRotations.back();
+		Tc1 = projector_calibrator.camBoardTranslations.back();
+
 		Rc2 = boardRot;
 		Tc2 = boardTrans;
 
@@ -206,7 +210,7 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 	return bPrintedPatternFound;
 }
 
-void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
+void Tinker::calibration::draw_projector_pattern(Mat& projectorImage)
 {
 	int radius = 20;
 	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
@@ -256,25 +260,20 @@ void Tinker::calibration::stereo_calibrate()
 {
 	const auto & objectPoints = projector_calibrator.get_object_points();
 	cout << "objectPoints size : " << objectPoints.size() << endl;
-	vector<vector<cv::Point2f> > auxImagePointsCamera;
 
-	cout << "check size of all parameters :" << endl;
-	cout << "camera_calibrator.get_board_rotations() : " << camera_calibrator.get_board_rotations() .size()<< endl;
-	cout << "camera_calibrator.get_board_translations() : " << camera_calibrator.get_board_translations().size() << endl;
-	cout << "camera_calibrator.get_camera_matrix() : " << camera_calibrator.get_camera_matrix().size() << endl;
-	cout << "camera_calibrator.get_dist_coeffs() : " << camera_calibrator.get_dist_coeffs().size() << endl;
-
-	for (int i = 0; i < objectPoints.size(); i++) {
-		vector<cv::Point2f> auxImagePoints;
-		projectPoints(cv::Mat(objectPoints[i]),
-			camera_calibrator.get_board_rotations()[i],
-			camera_calibrator.get_board_translations()[i],
-			camera_calibrator.get_camera_matrix(),
-			camera_calibrator.get_dist_coeffs(),
-			auxImagePoints);
-
-		auxImagePointsCamera.push_back(auxImagePoints);
+	auto n = objectPoints.size();
+	if (projector_calibrator.imagePoints.size() != n ||
+		projector_calibrator.camBoardRotations.size() != n ||
+		projector_calibrator.camBoardTranslations.size() != n) {
+		std::cerr << "Stereo input size mismatch: "
+			<< "obj=" << n
+			<< " projImg=" << projector_calibrator.imagePoints.size()
+			<< " refCamR=" << projector_calibrator.camBoardRotations.size()
+			<< " refCamT=" << projector_calibrator.camBoardTranslations.size()
+			<< std::endl;
+		return;
 	}
+	const auto& auxImagePointsCamera = projector_calibrator.frameMeasuredCircleImagePoints;
 
 	cv::Mat projectorMatrix = projector_calibrator.get_camera_matrix();
 	cv::Mat projectorDistCoeffs = projector_calibrator.get_dist_coeffs();
@@ -331,6 +330,9 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 			camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
 			camera_calibrator.back_project(boardRot, boardTrans, circlesImgPts, circlesObjectPts);
 
+			// Store the measured image of circles as seen from the camera, to be used by the projector calibrator later
+			projector_calibrator.frameMeasuredCircleImagePoints.push_back(circlesImgPts);
+
 			camera_calibrator.imagePointsCamObj.push_back(chessImgPts);
 			camera_calibrator.get_object_points().push_back(camera_calibrator.get_candidate_object_points());
 			camera_calibrator.boardRotations.push_back(boardRot);
@@ -338,6 +340,10 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 
 			projector_calibrator.imagePoints.push_back(projector_calibrator.get_candidate_image_points());
 			projector_calibrator.objectPoints.push_back(circlesObjectPts);
+
+			// during the same frame where we computed camera pose, we also store that pose in the projector calibrator
+			projector_calibrator.camBoardRotations.push_back(boardRot);
+			projector_calibrator.camBoardTranslations.push_back(boardTrans);
 
 			cout << "after add_projected : " << "imagePoints size : " << projector_calibrator.imagePoints.size() << endl;
 			cout << "after add_projected : " << "objectPoints size : " << projector_calibrator.objectPoints.size() << endl;

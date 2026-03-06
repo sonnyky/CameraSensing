@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
 			}
 			void operator()(StaticProjectorCalibrationState* c)
 			{
-				calib.draw_projector_pattern(frame, projImage);
+				calib.draw_projector_pattern(projImage);
 				bool success = calib.calibrate_projector(frame);
 				if (success) {
 					std::cout << "Static Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
@@ -91,9 +91,10 @@ int main(int argc, char* argv[])
 			}
 			void operator()(DynamicProjectorCalibrationState* c)
 			{
-				calib.draw_projector_pattern(frame, projImage);
-				calib.set_dynamic_projector_image_points(frame);
-				bool success = calib.calibrate_projector(frame);
+				calib.set_dynamic_projector_image_points(frame);  // decide where to project NOW (candidate points)
+				calib.draw_projector_pattern(projImage);   // project those points
+				bool success = calib.calibrate_projector(frame);  // process the frame corresponding to that projection
+
 				/*
 				if (success) {
 					std::cout << "Dynamic Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
