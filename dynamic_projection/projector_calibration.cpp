@@ -98,7 +98,8 @@ bool Tinker::projector_calibration::is_dynamic_calibration_satisfied() const
 	if (nFramesTotalProjectorCalib <= 0) {
 		return false;
 	}
-	return static_cast<int>(imagePoints.size()) >= nFramesTotalProjectorCalib;
+	const int requiredFrames = std::max(nFramesTotalProjectorCalib, nFramesBeforeDynamcProjectorCalib + 1);
+	return static_cast<int>(imagePoints.size()) >= requiredFrames;
 }
 
 void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, string _outputFileName, 
