@@ -52,6 +52,9 @@ namespace Tinker {
 			const cv::Mat & transObjToCam);
 		bool set_dynamic_projector_image_points(cv::Mat img);
 		bool is_dynamic_projector_calibration_satisfied() const;
+		void reset_dynamic_projection_priming();
+		bool is_dynamic_projection_primed() const;
+		void set_dynamic_projection_primed(bool primed);
 
 		void draw_projector_pattern(Mat& projectorImage);
 
@@ -80,5 +83,8 @@ namespace Tinker {
 	protected:
 		cv::Mat rotCamToProj;
 		cv::Mat transCamToProj;
+
+	private:
+		bool dynamic_projection_primed = false;
 	};
 }

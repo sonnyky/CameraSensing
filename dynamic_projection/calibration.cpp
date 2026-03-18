@@ -253,6 +253,21 @@ bool Tinker::calibration::is_dynamic_projector_calibration_satisfied() const
 	return projector_calibrator.is_dynamic_calibration_satisfied();
 }
 
+void Tinker::calibration::reset_dynamic_projection_priming()
+{
+	dynamic_projection_primed = false;
+}
+
+bool Tinker::calibration::is_dynamic_projection_primed() const
+{
+	return dynamic_projection_primed;
+}
+
+void Tinker::calibration::set_dynamic_projection_primed(bool primed)
+{
+	dynamic_projection_primed = primed;
+}
+
 void Tinker::calibration::draw_projector_pattern(Mat& projectorImage)
 {
 	int radius = 20;

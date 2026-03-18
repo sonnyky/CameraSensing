@@ -86,14 +86,22 @@ int main(int argc, char* argv[])
 				bool success = calib.calibrate_projector(frame);
 				if (success) {
 					std::cout << "Static Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
+					calib.reset_dynamic_projection_priming();
 					capture_state.transition_to<DynamicProjectorCalibrationState>();
 				}
 			}
 			void operator()(DynamicProjectorCalibrationState* c)
 			{
-				calib.set_dynamic_projector_image_points(frame);  // decide where to project NOW (candidate points)
-				calib.draw_projector_pattern(projImage);   // project those points
-				bool success = calib.calibrate_projector(frame);  // process the frame corresponding to that projection
+				if (!calib.is_dynamic_projection_primed()) {
+					calib.set_dynamic_projector_image_points(frame);
+					calib.draw_projector_pattern(projImage);
+					calib.set_dynamic_projection_primed(true);
+					return;
+				}
+
+				bool success = calib.calibrate_projector(frame);  // process the frame corresponding to the pattern already on screen
+				calib.set_dynamic_projector_image_points(frame);  // decide where to project next
+				calib.draw_projector_pattern(projImage);          // queue that pattern for the next loop
 
 				if (success && calib.is_dynamic_projector_calibration_satisfied()) {
 					std::cout << "Dynamic Projector Calibration complete. Switching to Tracking State." << std::endl;
