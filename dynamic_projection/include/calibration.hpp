@@ -55,6 +55,9 @@ namespace Tinker {
 		void reset_dynamic_projection_priming();
 		bool is_dynamic_projection_primed() const;
 		void set_dynamic_projection_primed(bool primed);
+		void reset_dynamic_calibration_solution();
+		void mark_dynamic_calibration_solution();
+		bool has_dynamic_calibration_solution() const;
 
 		void draw_projector_pattern(Mat& projectorImage);
 
@@ -86,5 +89,6 @@ namespace Tinker {
 
 	private:
 		bool dynamic_projection_primed = false;
+		bool dynamic_calibration_has_solution = false;
 	};
 }
