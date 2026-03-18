@@ -76,7 +76,8 @@ namespace Tinker {
 		vector<vector<Point2f>> imagePointsCamObj;
 
 		vector<cv::Point3f> get_candidate_object_points() { return candidateObjectPts; }
-		vector<vector<cv::Point3f>> get_object_points() { return objectPoints; }
+		vector<vector<cv::Point3f>>& get_object_points() { return objectPoints; }
+		const vector<vector<cv::Point3f>>& get_object_points() const { return objectPoints; }
 
 		vector<Mat> get_board_rotations() { return boardRotations; }
 		vector<Mat> get_board_translations() { return boardTranslations; }

@@ -95,16 +95,18 @@ int main(int argc, char* argv[])
 				calib.draw_projector_pattern(projImage);   // project those points
 				bool success = calib.calibrate_projector(frame);  // process the frame corresponding to that projection
 
-				/*
-				if (success) {
-					std::cout << "Dynamic Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
+				if (success && calib.is_dynamic_projector_calibration_satisfied()) {
+					std::cout << "Dynamic Projector Calibration complete. Switching to Tracking State." << std::endl;
 					capture_state.transition_to<TrackingState>();
 				}
-				*/
 			}
 			void operator()(TrackingState *  t)
 			{
-				cout<< " in tracking state "<< endl;
+				if (!calib.set_dynamic_projector_image_points(frame)) {
+					projImage = cv::Mat::zeros(projImage.size(), projImage.type());
+					return;
+				}
+				calib.draw_projector_pattern(projImage);
 			}
 		};
 
@@ -119,8 +121,20 @@ int main(int argc, char* argv[])
 #pragma region calibration parameters settings and calibration object instantiation
 		
 		Tinker::calibration calibration_manager;
+		cv::Size camera_image_size(1920, 1080);
+		{
+			cv::Mat first_frame = frame_capture.read();
+			if (!first_frame.empty()) {
+				camera_image_size = first_frame.size();
+			}
+		}
 
-		calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_pattern_width, FLAGS_pattern_height), Size(1920, 1080), FLAGS_pattern_type, 36.0, 1.0, FLAGS_minimum_frames, FLAGS_delay_between_frames, Tinker::DETECTION, FLAGS_write_points, FLAGS_write_extrinsics, 0, FLAGS_camera_filename);
+		// Printed chessboard on A3 paper
+		//calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_pattern_width, FLAGS_pattern_height), camera_image_size, FLAGS_pattern_type, 36.0, 1.0, FLAGS_minimum_frames, FLAGS_delay_between_frames, Tinker::DETECTION, FLAGS_write_points, FLAGS_write_extrinsics, 0, FLAGS_camera_filename);
+
+		// printed chessboard on A4 paper
+		calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_pattern_width, FLAGS_pattern_height), camera_image_size, FLAGS_pattern_type, 26.5, 1.0, FLAGS_minimum_frames, FLAGS_delay_between_frames, Tinker::DETECTION, FLAGS_write_points, FLAGS_write_extrinsics, 0, FLAGS_camera_filename);
+
 		calibration_manager.setup_projector_calibration_parameters(Size(1920, 1080), FLAGS_projector_filename, Size(4,5), 120, FLAGS_num_boards_before_dynamic_projector_calib, FLAGS_num_boards_final_projector_calib, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 0, 0);
 		calibration_manager.set_projector_static_image_points();
 #pragma endregion
@@ -137,6 +151,10 @@ int main(int argc, char* argv[])
 			}
 			else {
 				std::cerr << "Error: Empty frame received\n";
+				if (cv::waitKey(10) == 27) { // Exit on 'Esc' key
+					processing = 0;
+				}
+				continue;
 			}
 
 			std::visit(Visitor{ frame, projection, calibration_manager, capture_state }, capture_state.get_current_state());

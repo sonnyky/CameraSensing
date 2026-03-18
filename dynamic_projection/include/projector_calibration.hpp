@@ -25,8 +25,8 @@ namespace Tinker {
 
 		vector<vector<Point2f>> imagePoints;
 		vector<Point2f> candidate_image_points;
-		vector<Point2f> get_candidate_image_points() { return candidate_image_points; }
-		vector<vector<cv::Point3f>> get_object_points() { return objectPoints; }
+		const vector<Point2f>& get_candidate_image_points() const { return candidate_image_points; }
+		const vector<vector<cv::Point3f>>& get_object_points() const { return objectPoints; }
 
 		// The following parameters save the corresponding camera pose at the same frame projection calibration succeeded
 		vector<Mat> camBoardRotations;
@@ -37,10 +37,11 @@ namespace Tinker {
 		// object points in the world coordinate system
 		vector<vector<cv::Point3f>> objectPoints;
 
-		vector<Mat> get_board_rotations() { return boardRotations; }
-		vector<Mat> get_board_translations() { return boardTranslations; }
+		const vector<Mat>& get_board_rotations() const { return boardRotations; }
+		const vector<Mat>& get_board_translations() const { return boardTranslations; }
 
 		bool calibrate();
+		bool is_dynamic_calibration_satisfied() const;
 
 		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, int _nFramesTotalProjectorCalib, Pattern _patternType, float px, float py);
 

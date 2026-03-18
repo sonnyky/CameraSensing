@@ -51,7 +51,9 @@ public :
 			using T = std::decay_t<decltype(*statePtr)>;
 			if constexpr (std::is_same_v<T, IdleState>) return "IdleState";
 			else if constexpr (std::is_same_v<T, TrackingState>) return "TrackingState";
-			else if constexpr (std::is_same_v<T, CameraCalibrationState>) return "CalibrationState";
+			else if constexpr (std::is_same_v<T, CameraCalibrationState>) return "CameraCalibrationState";
+			else if constexpr (std::is_same_v<T, StaticProjectorCalibrationState>) return "StaticProjectorCalibrationState";
+			else if constexpr (std::is_same_v<T, DynamicProjectorCalibrationState>) return "DynamicProjectorCalibrationState";
 			else return "UnknownState";
 			}, current_state);
 	}
@@ -209,9 +211,9 @@ struct CameraCalibrationState
 		return {};
 	}
 
-	TransitionTo<IdleState> state_handler(const CameraCalibrationToStaticProjectorCalibrationEvent&) const
+	TransitionTo<StaticProjectorCalibrationState> state_handler(const CameraCalibrationToStaticProjectorCalibrationEvent&) const
 	{
-		std::cout << "Transitioning from CamreraCalibrationState to CameraCalibrationToStaticProjectorCalibrationState..." << std::endl;
+		std::cout << "Transitioning from CameraCalibrationState to StaticProjectorCalibrationState..." << std::endl;
 		return {};
 	}
 };
