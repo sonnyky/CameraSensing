@@ -1,4 +1,5 @@
 #include "camera_calibration.hpp"
+#include <limits>
 
 using namespace std;
 using namespace cv;
@@ -39,6 +40,7 @@ namespace Tinker {
 
 		const vector<Mat>& get_board_rotations() const { return boardRotations; }
 		const vector<Mat>& get_board_translations() const { return boardTranslations; }
+		double get_last_avg_reprojection_error() const { return last_avg_reprojection_error; }
 
 		bool calibrate();
 		bool is_dynamic_calibration_satisfied() const;
@@ -69,8 +71,14 @@ namespace Tinker {
 		int nFramesBeforeDynamcProjectorCalib;
 		int nFramesTotalProjectorCalib;
 		bool projector_is_calibrated = false;
+		double last_avg_reprojection_error = std::numeric_limits<double>::infinity();
+		std::vector<float> last_per_view_reprojection_errors;
+		float static_reprojection_error_threshold = 2.0f;
+		float dynamic_reprojection_error_threshold = 1.5f;
+		float max_per_view_reprojection_error = 3.0f;
 
 #pragma region projector calibration methods
+		void retain_best_calibration_views(const std::vector<float>& reprojErrs);
 
 		static double computeReprojectionErrors(
 			const vector<vector<Point3f> >& objectPoints,
