@@ -158,8 +158,21 @@ void Tinker::camera_calibration::load(string camera_config)
 bool Tinker::camera_calibration::find_board(Mat img)
 {
 	detected_board_points.clear();
-	bool foundChessCorners = findChessboardCorners(img, boardSize, detected_board_points,
-		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+	Mat gray;
+	if (img.channels() == 3) {
+		cvtColor(img, gray, COLOR_BGR2GRAY);
+	}
+	else {
+		gray = img;
+	}
+
+	bool foundChessCorners = findChessboardCorners(gray, boardSize, detected_board_points,
+		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE);
+
+	if (foundChessCorners) {
+		cornerSubPix(gray, detected_board_points, Size(11, 11),
+			Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+	}
 
 	return foundChessCorners;
 }

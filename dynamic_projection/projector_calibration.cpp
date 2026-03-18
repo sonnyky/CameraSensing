@@ -93,6 +93,14 @@ bool Tinker::projector_calibration::calibrate()
 
 }
 
+bool Tinker::projector_calibration::is_dynamic_calibration_satisfied() const
+{
+	if (nFramesTotalProjectorCalib <= 0) {
+		return false;
+	}
+	return static_cast<int>(imagePoints.size()) >= nFramesTotalProjectorCalib;
+}
+
 void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, string _outputFileName, 
 	Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, int _nFramesTotalProjectorCalib, Pattern _patternType, float px, float py)
 {

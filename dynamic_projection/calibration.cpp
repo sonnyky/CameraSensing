@@ -1,4 +1,5 @@
-﻿#include "include\calibration.hpp"
+#include "include\calibration.hpp"
+#include <cmath>
 
 Tinker::calibration::calibration() :
 	min_images_diff(4.0),
@@ -152,6 +153,17 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 	chessImgPts = camera_calibrator.get_detected_board_points();
 
 	if (bPrintedPatternFound) {
+		if (projector_calibrator.get_board_rotations().empty() ||
+			projector_calibrator.get_board_translations().empty() ||
+			projector_calibrator.camBoardRotations.empty() ||
+			projector_calibrator.camBoardTranslations.empty()) {
+			return false;
+		}
+
+		if (projector_calibrator.get_camera_matrix().empty() ||
+			projector_calibrator.get_dist_coeffs().empty()) {
+			return false;
+		}
 
 		drawChessboardCorners(img, camera_calibrator.get_board_size(), Mat(chessImgPts), bPrintedPatternFound);
 
@@ -205,9 +217,40 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 			projector_calibrator.get_dist_coeffs(),
 			followingPatternImagePoints);
 
-		projector_calibrator.set_candidate_image_points(followingPatternImagePoints);
+		const auto& prevCandidatePoints = projector_calibrator.get_candidate_image_points();
+		if (!prevCandidatePoints.empty() && prevCandidatePoints.size() == followingPatternImagePoints.size()) {
+			std::vector<cv::Point2f> smoothedPoints;
+			smoothedPoints.reserve(followingPatternImagePoints.size());
+
+			// Smooth motion to avoid sudden jumps when board pose detection jitters.
+			const float alpha = 0.25f;
+			const float maxStepPx = 45.0f;
+
+			for (size_t i = 0; i < followingPatternImagePoints.size(); ++i) {
+				const cv::Point2f& prev = prevCandidatePoints[i];
+				const cv::Point2f& next = followingPatternImagePoints[i];
+
+				cv::Point2f blended = prev * (1.0f - alpha) + next * alpha;
+				cv::Point2f delta = blended - prev;
+				float deltaNorm = std::sqrt((delta.x * delta.x) + (delta.y * delta.y));
+				if (deltaNorm > maxStepPx && deltaNorm > 1e-6f) {
+					float scale = maxStepPx / deltaNorm;
+					blended = prev + (delta * scale);
+				}
+				smoothedPoints.push_back(blended);
+			}
+			projector_calibrator.set_candidate_image_points(smoothedPoints);
+		}
+		else {
+			projector_calibrator.set_candidate_image_points(followingPatternImagePoints);
+		}
 	}
 	return bPrintedPatternFound;
+}
+
+bool Tinker::calibration::is_dynamic_projector_calibration_satisfied() const
+{
+	return projector_calibrator.is_dynamic_calibration_satisfied();
 }
 
 void Tinker::calibration::draw_projector_pattern(Mat& projectorImage)
@@ -225,7 +268,7 @@ Mat Tinker::calibration::process_image_for_circle_detection(Mat img)
 {
 	Mat thresholdedImage;
 	if (img.type() != CV_8UC1) {
-		cvtColor(img, thresholdedImage, COLOR_RGB2GRAY);
+		cvtColor(img, thresholdedImage, COLOR_BGR2GRAY);
 	}
 	else {
 		img.copyTo(thresholdedImage);
@@ -263,11 +306,13 @@ void Tinker::calibration::stereo_calibrate()
 
 	auto n = objectPoints.size();
 	if (projector_calibrator.imagePoints.size() != n ||
+		projector_calibrator.frameMeasuredCircleImagePoints.size() != n ||
 		projector_calibrator.camBoardRotations.size() != n ||
 		projector_calibrator.camBoardTranslations.size() != n) {
 		std::cerr << "Stereo input size mismatch: "
 			<< "obj=" << n
 			<< " projImg=" << projector_calibrator.imagePoints.size()
+			<< " camImg=" << projector_calibrator.frameMeasuredCircleImagePoints.size()
 			<< " refCamR=" << projector_calibrator.camBoardRotations.size()
 			<< " refCamT=" << projector_calibrator.camBoardTranslations.size()
 			<< std::endl;

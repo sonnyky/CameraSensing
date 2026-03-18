@@ -36,7 +36,7 @@ DEFINE_uint64(pattern_width, 9, help_message);
 DEFINE_uint64(pattern_height, 6, help_message);
 DEFINE_string(pattern_type, "chessboard", pattern_type_message);
 DEFINE_uint64(num_boards_before_dynamic_projector_calib, 5, nboards_before_dynamic_message);
-DEFINE_uint64(num_boards_final_projector_calib, 10, nboards_final_proj_calib_message);
+DEFINE_uint64(num_boards_final_projector_calib, 5, nboards_final_proj_calib_message);
 DEFINE_uint64(minimum_frames, 5, minimum_frames_message);
 DEFINE_uint64(delay_between_frames, 1000, delay_frames_message);
 DEFINE_string(camera_filename, "camera_params.xml", camera_filename_message);
