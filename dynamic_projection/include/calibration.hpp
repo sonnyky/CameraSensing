@@ -90,5 +90,8 @@ namespace Tinker {
 	private:
 		bool dynamic_projection_primed = false;
 		bool dynamic_calibration_has_solution = false;
+		bool has_smoothed_dynamic_board_pose = false;
+		cv::Mat smoothed_dynamic_board_rot;
+		cv::Mat smoothed_dynamic_board_trans;
 	};
 }

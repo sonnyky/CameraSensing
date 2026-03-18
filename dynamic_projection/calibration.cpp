@@ -165,10 +165,24 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 		cv::Mat boardTrans;
 		camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
 
+		// Smooth the estimated board pose before reprojection to reduce visible jitter.
+		const double poseAlpha = 0.2;
+		if (!has_smoothed_dynamic_board_pose) {
+			smoothed_dynamic_board_rot = boardRot.clone();
+			smoothed_dynamic_board_trans = boardTrans.clone();
+			has_smoothed_dynamic_board_pose = true;
+		}
+		else {
+			smoothed_dynamic_board_rot =
+				smoothed_dynamic_board_rot * (1.0 - poseAlpha) + boardRot * poseAlpha;
+			smoothed_dynamic_board_trans =
+				smoothed_dynamic_board_trans * (1.0 - poseAlpha) + boardTrans * poseAlpha;
+		}
+
 		const auto & camCandObjPts = camera_calibrator.get_candidate_object_points();
 		Point3f axisX = camCandObjPts[1] - camCandObjPts[0];
 		Point3f axisY = camCandObjPts[camera_calibrator.get_board_size().width] - camCandObjPts[0];
-		Point3f pos = camCandObjPts[0] - axisY * (camera_calibrator.get_board_size().width - 2) * 1.3;
+		Point3f pos = camCandObjPts[0];
 
 		vector<Point3f> auxObjectPoints;
 		for (int i = 0; i < projector_calibrator.get_circle_pattern_size().height; i++) {
@@ -177,7 +191,10 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 			}
 		}
 
-		vector<Point2f> followingPatternImagePoints = get_projected(auxObjectPoints, boardRot, boardTrans);
+		vector<Point2f> followingPatternImagePoints = get_projected(
+			auxObjectPoints,
+			smoothed_dynamic_board_rot,
+			smoothed_dynamic_board_trans);
 
 		const auto& prevCandidatePoints = projector_calibrator.get_candidate_image_points();
 		if (!prevCandidatePoints.empty() && prevCandidatePoints.size() == followingPatternImagePoints.size()) {
@@ -218,6 +235,9 @@ bool Tinker::calibration::is_dynamic_projector_calibration_satisfied() const
 void Tinker::calibration::reset_dynamic_projection_priming()
 {
 	dynamic_projection_primed = false;
+	has_smoothed_dynamic_board_pose = false;
+	smoothed_dynamic_board_rot.release();
+	smoothed_dynamic_board_trans.release();
 }
 
 bool Tinker::calibration::is_dynamic_projection_primed() const
