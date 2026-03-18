@@ -1,4 +1,5 @@
 #include "camera_calibration.hpp"
+#include <algorithm>
 
 Tinker::camera_calibration::camera_calibration()
 {
@@ -80,17 +81,31 @@ bool Tinker::camera_calibration::calibrate(Mat image_)
 			calibSuccess ? "Calibration succeeded" : "Calibration failed",
 			totalAvgErr);
 
-		//perViewRms now hold rms errors for each view. The index corresponds to the index of imagePoints.
-		// we filter the imagePoints with rms higher than the threshold
-		float threshold = 0.8f;
+		// Keep the best views by reprojection error instead of dropping everything
+		// above a hard threshold, which can wipe the capture set and block progress.
+		std::vector<std::pair<float, size_t>> rankedViews;
+		rankedViews.reserve(perViewRms.size());
+		for (size_t i = 0; i < perViewRms.size(); ++i) {
+			rankedViews.emplace_back(perViewRms[i], i);
+		}
+		std::sort(rankedViews.begin(), rankedViews.end(),
+			[](const auto& a, const auto& b) {
+				return a.first < b.first;
+			});
+
+		const size_t keepCount = std::min(
+			imagePoints.size(),
+			static_cast<size_t>(std::max(nframes, 12)));
 
 		std::vector<std::vector<cv::Point2f>> filteredImagePoints;
 		std::vector<float> filteredRms;
-		for (size_t i = 0; i < perViewRms.size(); ++i) {
-			if (perViewRms[i] <= threshold) {
-				filteredImagePoints.push_back(imagePoints[i]);
-				filteredRms.push_back(perViewRms[i]);
-			}
+		filteredImagePoints.reserve(keepCount);
+		filteredRms.reserve(keepCount);
+
+		for (size_t i = 0; i < keepCount && i < rankedViews.size(); ++i) {
+			const size_t viewIndex = rankedViews[i].second;
+			filteredImagePoints.push_back(imagePoints[viewIndex]);
+			filteredRms.push_back(rankedViews[i].first);
 		}
 
 		imagePoints.swap(filteredImagePoints);
