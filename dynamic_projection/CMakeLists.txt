@@ -54,6 +54,7 @@ message(STATUS "gflags target selected: ${GFLAGS_TARGET}")
 set(SOURCES
   main.cpp
   capture.cpp
+  flags.cpp
   dynamic_projection.cpp
   state.cpp
   camera_calibration.cpp

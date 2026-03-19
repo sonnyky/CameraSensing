@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
 			void operator()(DynamicProjectorCalibrationState* c)
 			{
 				if (!calib.is_dynamic_projection_primed()) {
-					if (!calib.set_dynamic_projector_image_points(frame)) {
+					if (!calib.set_dynamic_projector_image_points(frame, true)) {
 						projImage = cv::Mat::zeros(projImage.size(), projImage.type());
 						return;
 					}
@@ -113,7 +113,7 @@ int main(int argc, char* argv[])
 				if (success) {
 					calib.mark_dynamic_calibration_solution();
 				}
-				if (!calib.set_dynamic_projector_image_points(frame)) {
+				if (!calib.set_dynamic_projector_image_points(frame, true)) {
 					projImage = cv::Mat::zeros(projImage.size(), projImage.type());
 					return;
 				}
@@ -127,7 +127,7 @@ int main(int argc, char* argv[])
 			}
 			void operator()(TrackingState *  t)
 			{
-				if (!calib.set_dynamic_projector_image_points(frame)) {
+				if (!calib.set_dynamic_projector_image_points(frame, false)) {
 					projImage = cv::Mat::zeros(projImage.size(), projImage.type());
 					return;
 				}

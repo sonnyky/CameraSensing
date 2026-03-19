@@ -27,22 +27,28 @@ static const char delay_frames_message[] = "Required. Specifies the time in ms t
 static const char camera_filename_message[] = "Required. Specifies the filename to save camera parameters after calibration.";
 
 static const char projector_filename_message[] = "Required. Specifies the filename to save projector intrinsics parameters after calibration.";
+static const char projector_offset_scale_message[] = "Scale factor for the Y-axis offset used during dynamic projector calibration.";
+static const char projector_circle_radius_message[] = "Radius in pixels for the projected circle pattern.";
+static const char projector_smoothing_rate_message[] = "Smoothing rate for dynamic projector pose and image-point updates.";
 
 
 
 
-DEFINE_bool(h, false, help_message);
-DEFINE_uint64(pattern_width, 9, help_message);
-DEFINE_uint64(pattern_height, 6, help_message);
-DEFINE_string(pattern_type, "chessboard", pattern_type_message);
-DEFINE_uint64(num_boards_before_dynamic_projector_calib, 8, nboards_before_dynamic_message);
-DEFINE_uint64(num_boards_final_projector_calib, 5, nboards_final_proj_calib_message);
-DEFINE_uint64(minimum_frames, 8, minimum_frames_message);
-DEFINE_uint64(delay_between_frames, 1000, delay_frames_message);
-DEFINE_string(camera_filename, "camera_params.xml", camera_filename_message);
-DEFINE_string(projector_filename, "projector_params.xml", projector_filename_message);
-DEFINE_bool(write_points, false, help_message);
-DEFINE_bool(write_extrinsics, true, help_message);
+DECLARE_bool(h);
+DECLARE_uint64(pattern_width);
+DECLARE_uint64(pattern_height);
+DECLARE_string(pattern_type);
+DECLARE_uint64(num_boards_before_dynamic_projector_calib);
+DECLARE_uint64(num_boards_final_projector_calib);
+DECLARE_uint64(minimum_frames);
+DECLARE_uint64(delay_between_frames);
+DECLARE_string(camera_filename);
+DECLARE_string(projector_filename);
+DECLARE_double(projector_offset_y_scale);
+DECLARE_uint64(projected_circle_radius);
+DECLARE_double(projector_smoothing_rate);
+DECLARE_bool(write_points);
+DECLARE_bool(write_extrinsics);
 
 
 /**	

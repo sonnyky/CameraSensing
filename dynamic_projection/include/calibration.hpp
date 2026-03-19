@@ -50,7 +50,7 @@ namespace Tinker {
 		vector<Point2f> get_projected(const vector<Point3f> & pts,
 			const cv::Mat & rotObjToCam,
 			const cv::Mat & transObjToCam);
-		bool set_dynamic_projector_image_points(cv::Mat img);
+		bool set_dynamic_projector_image_points(cv::Mat img, bool offset_from_marker = true);
 		bool is_dynamic_projector_calibration_satisfied() const;
 		void reset_dynamic_projection_priming();
 		bool is_dynamic_projection_primed() const;
@@ -94,5 +94,7 @@ namespace Tinker {
 		bool has_smoothed_dynamic_board_pose = false;
 		cv::Mat smoothed_dynamic_board_rot;
 		cv::Mat smoothed_dynamic_board_trans;
+		double last_dynamic_stereo_rms = std::numeric_limits<double>::infinity();
+		double dynamic_stereo_rms_threshold = 3.0;
 	};
 }

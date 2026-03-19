@@ -1,5 +1,8 @@
 #include "include\calibration.hpp"
 #include <cmath>
+#include <limits>
+#include <algorithm>
+#include "flags.hpp"
 
 Tinker::calibration::calibration() :
 	min_images_diff(4.0),
@@ -143,7 +146,7 @@ vector<Point2f> Tinker::calibration::get_projected(const vector<Point3f>& pts, c
 	return out;
 }
 
-bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
+bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img, bool offset_from_marker)
 {
 	vector<cv::Point2f> chessImgPts;
 	bool bPrintedPatternFound = camera_calibrator.find_board(img);
@@ -166,7 +169,7 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 		camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
 
 		// Smooth the estimated board pose before reprojection to reduce visible jitter.
-		const double poseAlpha = 0.2;
+		const double poseAlpha = FLAGS_projector_smoothing_rate;
 		if (!has_smoothed_dynamic_board_pose) {
 			smoothed_dynamic_board_rot = boardRot.clone();
 			smoothed_dynamic_board_trans = boardTrans.clone();
@@ -183,6 +186,9 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 		Point3f axisX = camCandObjPts[1] - camCandObjPts[0];
 		Point3f axisY = camCandObjPts[camera_calibrator.get_board_size().width] - camCandObjPts[0];
 		Point3f pos = camCandObjPts[0];
+		if (offset_from_marker) {
+			pos = camCandObjPts[0] - axisY * (camera_calibrator.get_board_size().width - 2) * static_cast<float>(FLAGS_projector_offset_y_scale);
+		}
 
 		vector<Point3f> auxObjectPoints;
 		for (int i = 0; i < projector_calibrator.get_circle_pattern_size().height; i++) {
@@ -202,7 +208,7 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 			smoothedPoints.reserve(followingPatternImagePoints.size());
 
 			// Smooth motion to avoid sudden jumps when board pose detection jitters.
-			const float alpha = 0.25f;
+			const float alpha = static_cast<float>(std::clamp(FLAGS_projector_smoothing_rate, 0.0, 1.0));
 			const float maxStepPx = 45.0f;
 
 			for (size_t i = 0; i < followingPatternImagePoints.size(); ++i) {
@@ -229,7 +235,8 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 
 bool Tinker::calibration::is_dynamic_projector_calibration_satisfied() const
 {
-	return projector_calibrator.is_dynamic_calibration_satisfied();
+	return projector_calibrator.is_dynamic_calibration_satisfied() &&
+		last_dynamic_stereo_rms <= dynamic_stereo_rms_threshold;
 }
 
 void Tinker::calibration::reset_dynamic_projection_priming()
@@ -238,6 +245,7 @@ void Tinker::calibration::reset_dynamic_projection_priming()
 	has_smoothed_dynamic_board_pose = false;
 	smoothed_dynamic_board_rot.release();
 	smoothed_dynamic_board_trans.release();
+	last_dynamic_stereo_rms = std::numeric_limits<double>::infinity();
 }
 
 bool Tinker::calibration::is_dynamic_projection_primed() const
@@ -295,7 +303,7 @@ void Tinker::calibration::draw_camera_debug(Mat& image)
 
 void Tinker::calibration::draw_projector_pattern(Mat& projectorImage)
 {
-	int radius = 50;
+	int radius = static_cast<int>(FLAGS_projected_circle_radius);
 	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
 	for (int i = 0; i < points.size(); i++) {
@@ -378,7 +386,7 @@ void Tinker::calibration::stereo_calibrate()
 		return;
 	}
 
-	cv::stereoCalibrate(objectPoints,
+	const double stereoRms = cv::stereoCalibrate(objectPoints,
 		auxImagePointsCamera,
 		projector_calibrator.imagePoints,
 		cameraMatrix, cameraDistCoeffs,
@@ -387,6 +395,8 @@ void Tinker::calibration::stereo_calibrate()
 		rotation3x3, transCamToProj,
 		essentialMatrix, fundamentalMatrix,
 		CALIB_FIX_INTRINSIC);
+	last_dynamic_stereo_rms = stereoRms;
+	std::cout << "Dynamic stereo RMS error: " << stereoRms << std::endl;
 
 	cv::Rodrigues(rotation3x3, rotCamToProj);
 }
