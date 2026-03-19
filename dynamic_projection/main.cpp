@@ -45,6 +45,12 @@ int main(int argc, char* argv[])
 	namedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
 	moveWindow("ProjectionWindow", width_first, height_first);
 	setWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
+	namedWindow("CameraDebug", WINDOW_NORMAL);
+	moveWindow("CameraDebug", 0, 0);
+	resizeWindow("CameraDebug", 640, 360);
+	namedWindow("ImageThresholded", WINDOW_NORMAL);
+	moveWindow("ImageThresholded", 980, 0);
+	resizeWindow("ImageThresholded", 640, 360);
 
 	// create target image
 	Mat detectionResized = Mat(Size(width_second, height_second), CV_8UC1);
@@ -177,6 +183,8 @@ int main(int argc, char* argv[])
 			}
 
 			std::visit(Visitor{ frame, projection, calibration_manager, capture_state }, capture_state.get_current_state());
+			calibration_manager.draw_camera_debug(frame);
+			cv::imshow("CameraDebug", frame);
 
 			// Necessary to update the OpenCV window and check for user input
 			if (cv::waitKey(10) == 27) { // Exit on 'Esc' key

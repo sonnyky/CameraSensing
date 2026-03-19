@@ -58,6 +58,7 @@ namespace Tinker {
 		void reset_dynamic_calibration_solution();
 		void mark_dynamic_calibration_solution();
 		bool has_dynamic_calibration_solution() const;
+		void draw_camera_debug(Mat& image);
 
 		void draw_projector_pattern(Mat& projectorImage);
 

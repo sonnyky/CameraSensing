@@ -73,7 +73,7 @@ namespace Tinker {
 		bool projector_is_calibrated = false;
 		double last_avg_reprojection_error = std::numeric_limits<double>::infinity();
 		std::vector<float> last_per_view_reprojection_errors;
-		float static_reprojection_error_threshold = 2.0f;
+		float static_reprojection_error_threshold = 2.5f;
 		float dynamic_reprojection_error_threshold = 1.5f;
 		float max_per_view_reprojection_error = 3.0f;
 

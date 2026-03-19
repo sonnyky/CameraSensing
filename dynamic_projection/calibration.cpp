@@ -265,9 +265,37 @@ bool Tinker::calibration::has_dynamic_calibration_solution() const
 	return dynamic_calibration_has_solution;
 }
 
+void Tinker::calibration::draw_camera_debug(Mat& image)
+{
+	if (!camera_calibrator.find_board(image)) {
+		return;
+	}
+
+	const auto chessImgPts = camera_calibrator.get_detected_board_points();
+	drawChessboardCorners(image, camera_calibrator.get_board_size(), Mat(chessImgPts), true);
+
+	const cv::Mat cameraMatrix = camera_calibrator.get_camera_matrix();
+	const cv::Mat distCoeffs = camera_calibrator.get_dist_coeffs();
+	if (cameraMatrix.empty() || distCoeffs.empty()) {
+		return;
+	}
+
+	cv::Mat boardRot;
+	cv::Mat boardTrans;
+	camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
+
+	const auto objectPoints = camera_calibrator.get_candidate_object_points();
+	float axisLength = 1.0f;
+	if (objectPoints.size() > 1) {
+		axisLength = static_cast<float>(cv::norm(objectPoints[1] - objectPoints[0]) * 2.0);
+	}
+
+	cv::drawFrameAxes(image, cameraMatrix, distCoeffs, boardRot, boardTrans, axisLength, 2);
+}
+
 void Tinker::calibration::draw_projector_pattern(Mat& projectorImage)
 {
-	int radius = 20;
+	int radius = 50;
 	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
 	for (int i = 0; i < points.size(); i++) {
