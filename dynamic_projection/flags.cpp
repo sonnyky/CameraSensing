@@ -8,6 +8,7 @@ DEFINE_uint64(num_boards_before_dynamic_projector_calib, 8, nboards_before_dynam
 DEFINE_uint64(num_boards_final_projector_calib, 5, nboards_final_proj_calib_message);
 DEFINE_uint64(minimum_frames, 8, minimum_frames_message);
 DEFINE_uint64(delay_between_frames, 1000, delay_frames_message);
+DEFINE_double(minimum_board_motion_px, 15.0, board_motion_message);
 DEFINE_string(camera_filename, "camera_params.xml", camera_filename_message);
 DEFINE_string(projector_filename, "projector_params.xml", projector_filename_message);
 DEFINE_double(projector_offset_y_scale, 0.9, projector_offset_scale_message);

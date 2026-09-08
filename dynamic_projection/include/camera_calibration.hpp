@@ -40,14 +40,13 @@ namespace Tinker {
 			float squareSize_, 
 			float aspectRatio_,
 			int nFrames_,
-			int delay_,
 			int mode_,
 			bool writePoints_,
 			bool writeExtrinsics_,
 			int cameraId_,
 			string outputFileName_);
 
-		bool calibrate(Mat image_);
+		bool calibrate(Mat image_, const vector<Point2f>& detectedPoints = {});
 
 		void set_to_calibration_mode();
 
@@ -115,8 +114,6 @@ namespace Tinker {
 		bool flipVertical;
 		bool showUndistorted;
 		bool videofile;
-		int delay;
-		clock_t prevTimestamp = 0;
 		int calibrationStatus = DETECTION;
 		int cameraId = 0;
 		vector<string> imageList;
@@ -127,7 +124,6 @@ namespace Tinker {
 
 		vector<Point2f> pointbuf;
 		bool found;
-		clock_t previous_timestamp = 0;
 #pragma endregion
 
 #pragma region camera calibration methods

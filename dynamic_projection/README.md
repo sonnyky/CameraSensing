@@ -212,7 +212,7 @@ If the circles are projected onto a different plane than the marker, the 3D reco
 
 ## Supported Parameters
 
-The application currently supports these command-line parameters from [`include/flags.hpp`](C:/Users/Sonny/Desktop/Workspace/CameraSensing/dynamic_projection/include/flags.hpp):
+The application currently supports these command-line parameters from [`include/flags.hpp`](include/flags.hpp):
 
 | Parameter | Default | Meaning |
 |---|---:|---|
@@ -222,7 +222,8 @@ The application currently supports these command-line parameters from [`include/
 | `--num_boards_before_dynamic_projector_calib` | `8` | Minimum accepted projector samples before entering dynamic calibration |
 | `--num_boards_final_projector_calib` | `5` | Minimum dynamic accepted samples target used for completion |
 | `--minimum_frames` | `8` | Minimum accepted camera calibration images |
-| `--delay_between_frames` | `1000` | Delay in milliseconds between accepted calibration frames |
+| `--delay_between_frames` | `1000` | Minimum interval in milliseconds between accepted calibration samples |
+| `--minimum_board_motion_px` | `15.0` | Minimum chessboard-corner RMS movement in pixels before accepting another sample |
 | `--camera_filename` | `camera_params.xml` | Output file for camera intrinsics |
 | `--projector_filename` | `projector_params.xml` | Output file for projector intrinsics |
 | `--projector_offset_y_scale` | `0.9` | Offset scale used during dynamic calibration to place the projected circle grid away from the marker |
@@ -245,6 +246,7 @@ Example launch command using the current defaults:
   --num_boards_final_projector_calib=5 `
   --minimum_frames=8 `
   --delay_between_frames=1000 `
+  --minimum_board_motion_px=15.0 `
   --camera_filename=camera_params.xml `
   --projector_filename=projector_params.xml `
   --projector_offset_y_scale=0.9 `

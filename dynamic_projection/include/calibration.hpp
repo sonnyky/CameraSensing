@@ -4,7 +4,7 @@
 
 namespace Tinker {
 
-	using system_clock = std::chrono::system_clock;
+	using steady_clock = std::chrono::steady_clock;
 	//enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2 , DYNAMIC_DETECTION = 3 };
 	
 	class calibration{
@@ -38,10 +38,6 @@ namespace Tinker {
 
 		void load(string cameraConfig, string projectorConfig, string extrinsicsConfig);
 		
-		// Capture and decide if latest frame is a new frame
-		bool accept_new_frame(cv::Mat camMat);
-
-
 		bool add_projected(cv::Mat img, cv::Mat processedImg);
 
 		const cv::Mat & get_cam_to_proj_rotation() { return rotCamToProj; }
@@ -59,6 +55,7 @@ namespace Tinker {
 		void reset_dynamic_calibration_solution();
 		void mark_dynamic_calibration_solution();
 		bool has_dynamic_calibration_solution() const;
+		void reset_sample_capture_gate();
 		void draw_camera_debug(Mat& image);
 
 		void draw_projector_pattern(Mat& projectorImage);
@@ -71,12 +68,12 @@ namespace Tinker {
 
 	private:
 
-		Mat prev_camera_frame;
-		double diff_mean;
-		std::chrono::time_point<std::chrono::system_clock> last_frame_time;
-		double elapsed_time;
-		double min_images_diff;
-		double min_elapsed_time;
+		bool should_accept_board_sample(const vector<Point2f>& boardPoints) const;
+		void commit_accepted_board_sample(const vector<Point2f>& boardPoints);
+		vector<Point2f> last_accepted_board_points;
+		std::chrono::time_point<steady_clock> last_accepted_sample_time;
+		std::chrono::milliseconds minimum_sample_interval{ 0 };
+		bool has_accepted_board_sample = false;
 
 		camera_calibration camera_calibrator;
 		projector_calibration projector_calibrator;

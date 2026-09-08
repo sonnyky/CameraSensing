@@ -83,6 +83,7 @@ int main(int argc, char* argv[])
 				bool success = calib.calibrate_camera(frame);
 				if (success) {
 					std::cout << "Camera Calibration complete. Switching to Static Projector Calibration State." << std::endl;
+					calib.reset_sample_capture_gate();
 					capture_state.transition_to<StaticProjectorCalibrationState>();
 				}
 			}
@@ -94,6 +95,7 @@ int main(int argc, char* argv[])
 					std::cout << "Static Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
 					calib.reset_dynamic_projection_priming();
 					calib.reset_dynamic_calibration_solution();
+					calib.reset_sample_capture_gate();
 					capture_state.transition_to<DynamicProjectorCalibrationState>();
 				}
 			}

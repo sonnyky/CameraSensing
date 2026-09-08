@@ -23,6 +23,7 @@ static const char nboards_final_proj_calib_message[] = "Required. Specifies the 
 static const char minimum_frames_message[] = "Required. Specifies the number of calibration images necessary for camera calibration.";
 
 static const char delay_frames_message[] = "Required. Specifies the time in ms to delay frame capture during camera and projector calibration.";
+static const char board_motion_message[] = "Minimum chessboard corner RMS movement in pixels required to accept another calibration sample.";
 
 static const char camera_filename_message[] = "Required. Specifies the filename to save camera parameters after calibration.";
 
@@ -42,6 +43,7 @@ DECLARE_uint64(num_boards_before_dynamic_projector_calib);
 DECLARE_uint64(num_boards_final_projector_calib);
 DECLARE_uint64(minimum_frames);
 DECLARE_uint64(delay_between_frames);
+DECLARE_double(minimum_board_motion_px);
 DECLARE_string(camera_filename);
 DECLARE_string(projector_filename);
 DECLARE_double(projector_offset_y_scale);

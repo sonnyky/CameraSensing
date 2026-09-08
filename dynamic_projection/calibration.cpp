@@ -4,11 +4,7 @@
 #include <algorithm>
 #include "flags.hpp"
 
-Tinker::calibration::calibration() :
-	min_images_diff(4.0),
-	min_elapsed_time(2.0),
-	diff_mean(0.0),
-	elapsed_time(0.0)
+Tinker::calibration::calibration()
 {
 	camera_is_calibrated = false;
 }
@@ -26,14 +22,13 @@ void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, S
 		squareSize_,
 		aspectRatio_,
 		nFrames_,
-		delay_,
 		mode_,
 		writePoints_,
 		writeExtrinsics_,
 		cameraId_,
 		outputFileName_
 	);
-	last_frame_time = system_clock::now();
+	minimum_sample_interval = std::chrono::milliseconds(delay_);
 	camera_calibrator.setup_candidate_object_points();
 
 	// check for previous calibration files with the same file name
@@ -70,12 +65,18 @@ void Tinker::calibration::set_projector_static_image_points()
 
 bool Tinker::calibration::calibrate_camera(Mat image)
 {
-	if (!accept_new_frame(image)) {
+	if (!camera_calibrator.find_board(image)) {
 		return false;
 	}
-	else {
-		return camera_calibrator.calibrate(image);
+
+	const auto boardPoints = camera_calibrator.get_detected_board_points();
+	if (!should_accept_board_sample(boardPoints)) {
+		return false;
 	}
+
+	const bool calibrationComplete = camera_calibrator.calibrate(image, boardPoints);
+	commit_accepted_board_sample(boardPoints);
+	return calibrationComplete;
 }
 
 void Tinker::calibration::switch_to_calibration_mode()
@@ -90,36 +91,44 @@ void Tinker::calibration::load(string cameraConfig, string projectorConfig, stri
 	loadExtrinsics(extrinsicsConfig);
 }
 
-bool Tinker::calibration::accept_new_frame(cv::Mat camMat)
+bool Tinker::calibration::should_accept_board_sample(const vector<Point2f>& boardPoints) const
 {
-	if (prev_camera_frame.empty()) {
-		camMat.copyTo(prev_camera_frame);
-		last_frame_time = std::chrono::system_clock::now();
-		std::cout << "first frame" << std::endl;
-		return false;  // Do not accept the first frame
+	if (boardPoints.empty()) {
+		return false;
 	}
 
-	cv::Mat diffMat;
-	cv::absdiff(prev_camera_frame, camMat, diffMat);
-
-	cv::Scalar m = mean(diffMat);  // (meanB, meanG, meanR)
-	double frameDiffMean = (m[0] + m[1] + m[2]) / 3.0;
-
-	using namespace std::chrono;
-	std::chrono::time_point<system_clock> latest_frame_time = system_clock::now();
-	duration<double> elapsed_seconds = latest_frame_time - last_frame_time;
-
-	double elapsed = elapsed_seconds.count();
-
-	if ((elapsed > min_elapsed_time) && (frameDiffMean > min_images_diff)) {
-		camMat.copyTo(prev_camera_frame);
-		last_frame_time = latest_frame_time;
-		diff_mean = frameDiffMean;
-		elapsed_time = elapsed;
+	if (!has_accepted_board_sample) {
 		return true;
 	}
 
-	return false;
+	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+		steady_clock::now() - last_accepted_sample_time).count();
+	if (elapsed < minimum_sample_interval.count() ||
+		boardPoints.size() != last_accepted_board_points.size()) {
+		return false;
+	}
+
+	double sumSquaredDisplacement = 0.0;
+	for (size_t i = 0; i < boardPoints.size(); ++i) {
+		const cv::Point2f displacement = boardPoints[i] - last_accepted_board_points[i];
+		sumSquaredDisplacement += displacement.dot(displacement);
+	}
+
+	const double rmsDisplacement = std::sqrt(sumSquaredDisplacement / boardPoints.size());
+	return rmsDisplacement >= FLAGS_minimum_board_motion_px;
+}
+
+void Tinker::calibration::commit_accepted_board_sample(const vector<Point2f>& boardPoints)
+{
+	last_accepted_board_points = boardPoints;
+	last_accepted_sample_time = steady_clock::now();
+	has_accepted_board_sample = true;
+}
+
+void Tinker::calibration::reset_sample_capture_gate()
+{
+	last_accepted_board_points.clear();
+	has_accepted_board_sample = false;
 }
 
 void Tinker::calibration::loadExtrinsics(string filename, bool absolute)
@@ -333,13 +342,20 @@ Mat Tinker::calibration::process_image_for_circle_detection(Mat img)
 
 bool Tinker::calibration::calibrate_projector(Mat img)
 {
-	if (!accept_new_frame(img)) {
+	Mat processedImage = process_image_for_circle_detection(img);
+	if (!camera_calibrator.find_board(img)) {
+		imshow("ImageThresholded", processedImage);
 		return false;
 	}
 
-	Mat processedImage = process_image_for_circle_detection(img);
+	const auto boardPoints = camera_calibrator.get_detected_board_points();
+	if (!should_accept_board_sample(boardPoints)) {
+		imshow("ImageThresholded", processedImage);
+		return false;
+	}
 
 	if (add_projected(img, processedImage)) {
+		commit_accepted_board_sample(boardPoints);
 		
 		cout << "calibrating projector inside calibrate_projector"  << endl;
 		if (projector_calibrator.calibrate()) {

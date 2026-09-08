@@ -11,7 +11,7 @@ Tinker::camera_calibration::~camera_calibration()
 	calibrationStatus = CAPTURING;
 }
 
-void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, std::string outputFileName_)
+void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, std::string outputFileName_)
 {
 	boardSize = boardSize_;
 	imageSize = imageSize_;
@@ -19,7 +19,6 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	patternLengthInRealUnits = squareSize_;
 	aspectRatio = aspectRatio_;
 	nframes = nFrames_;
-	delay = delay_;
 	calibrationStatus = mode_;
 	writePoints = writePoints_;
 	writeExtrinsics = writeExtrinsics_;
@@ -28,7 +27,7 @@ void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size 
 	load_camera_matrix(outputFileName_);
 }
 
-bool Tinker::camera_calibration::calibrate(Mat image_)
+bool Tinker::camera_calibration::calibrate(Mat image_, const vector<Point2f>& detectedPoints)
 {
 	Mat viewGray;
 
@@ -39,31 +38,36 @@ bool Tinker::camera_calibration::calibrate(Mat image_)
 	else if (pattern == "asymmetric_circles_grid") {
 		calibPattern = ASYMMETRIC_CIRCLES_GRID;
 	}
-	switch (calibPattern)
-	{
-	case CHESSBOARD:
-		found = findChessboardCorners(image_, boardSize, pointbuf,
-			CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
-		break;
-	case CIRCLES_GRID:
-		found = findCirclesGrid(image_, boardSize, pointbuf);
-		break;
-	case ASYMMETRIC_CIRCLES_GRID:
-		found = findCirclesGrid(image_, boardSize, pointbuf, CALIB_CB_ASYMMETRIC_GRID);
-		break;
-	default:
-		break;
+	if (!detectedPoints.empty()) {
+		pointbuf = detectedPoints;
+		found = true;
+	}
+	else {
+		switch (calibPattern)
+		{
+		case CHESSBOARD:
+			found = findChessboardCorners(image_, boardSize, pointbuf,
+				CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+			break;
+		case CIRCLES_GRID:
+			found = findCirclesGrid(image_, boardSize, pointbuf);
+			break;
+		case ASYMMETRIC_CIRCLES_GRID:
+			found = findCirclesGrid(image_, boardSize, pointbuf, CALIB_CB_ASYMMETRIC_GRID);
+			break;
+		default:
+			break;
+		}
+
+		cvtColor(image_, viewGray, COLOR_BGR2GRAY);
+		if (calibPattern == CHESSBOARD && found) {
+			cornerSubPix(viewGray, pointbuf, Size(11, 11),
+				Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+		}
 	}
 
-	cvtColor(image_, viewGray, COLOR_BGR2GRAY);
-	// improve the found corners' coordinate accuracy
-	if (calibPattern == CHESSBOARD && found) cornerSubPix(viewGray, pointbuf, Size(11, 11),
-		Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
-
-	if (found && (clock() - prevTimestamp > delay*1e-3*CLOCKS_PER_SEC))
-	{
+	if (found) {
 		imagePoints.push_back(pointbuf);
-		prevTimestamp = clock();
 	}
 
 	// Once we have more points than the threshold we run calibration on the aggregated points to get a global model
@@ -148,7 +152,6 @@ bool Tinker::camera_calibration::calibrate(Mat image_)
 void Tinker::camera_calibration::set_to_calibration_mode()
 {
 	imagePoints.clear();
-	prevTimestamp = 0;
 	calibrationStatus = CAPTURING;
 }
 
