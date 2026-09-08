@@ -31,7 +31,7 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
 cmake --build build --config Release
 ```
 
-Run the Release executable from the repository root so the default calibration files are written there:
+Run the Release executable. By default, calibration files are written beside the executable:
 
 ```powershell
 .\build\Release\dynamic_projection.exe
@@ -39,7 +39,16 @@ Run the Release executable from the repository root so the default calibration f
 
 The application opens `ProjectionWindow` fullscreen on a display positioned to the right of the primary 1920-pixel-wide display. Press `Esc` to exit.
 
+Both calibration files always include the solved parameters, reprojection errors, extrinsics, and detected image points. Set `--calibration_output_dir` to write them elsewhere.
+
 ## Calibration Process
+
+### Sample Capture Gate
+
+For camera, static-projector, and dynamic-projector calibration, the app accepts a sample only after it detects the chessboard. The first valid sample in each phase is accepted immediately; it does **not** wait for `--delay_between_frames` or require board motion. Each later sample requires both:
+
+- the configured minimum interval since the previous accepted sample
+- chessboard-corner RMS movement at or above `--minimum_board_motion_px`
 
 ### 1. Camera Calibration
 
@@ -218,19 +227,16 @@ The application currently supports these command-line parameters from [`include/
 |---|---:|---|
 | `--pattern_width` | `9` | Number of inner corners across the calibration board width |
 | `--pattern_height` | `6` | Number of inner corners across the calibration board height |
-| `--pattern_type` | `chessboard` | Calibration board type used for camera calibration |
 | `--num_boards_before_dynamic_projector_calib` | `8` | Minimum accepted projector samples before entering dynamic calibration |
 | `--num_boards_final_projector_calib` | `5` | Minimum dynamic accepted samples target used for completion |
 | `--minimum_frames` | `8` | Minimum accepted camera calibration images |
-| `--delay_between_frames` | `1000` | Minimum interval in milliseconds between accepted calibration samples |
-| `--minimum_board_motion_px` | `15.0` | Minimum chessboard-corner RMS movement in pixels before accepting another sample |
-| `--camera_filename` | `camera_params.xml` | Output file for camera intrinsics |
-| `--projector_filename` | `projector_params.xml` | Output file for projector intrinsics |
+| `--delay_between_frames` | `1000` | Minimum interval in milliseconds after the first accepted sample in a phase |
+| `--minimum_board_motion_px` | `15.0` | Minimum chessboard-corner RMS movement in pixels after the first accepted sample in a phase |
+| `--calibration_output_dir` | Executable directory | Directory for `camera_params.xml` and `projector_params.xml` |
 | `--projector_offset_y_scale` | `0.9` | Offset scale used during dynamic calibration to place the projected circle grid away from the marker |
 | `--projected_circle_radius` | `30` | Radius of each projected circle in projector pixels |
 | `--projector_smoothing_rate` | `0.4` | Smoothing factor for dynamic pose and projector-point updates |
-| `--write_points` | `false` | Save detected image points to output calibration files |
-| `--write_extrinsics` | `true` | Save extrinsic data to output calibration files |
+| `--max_dynamic_stereo_rms` | `3.0` | Maximum stereo RMS error allowed before entering tracking mode |
 | `--h` | `false` | Print usage |
 
 ## Default Launch Command
@@ -241,19 +247,15 @@ Example launch command using the current defaults:
 .\build\Release\dynamic_projection.exe `
   --pattern_width=9 `
   --pattern_height=6 `
-  --pattern_type=chessboard `
   --num_boards_before_dynamic_projector_calib=8 `
   --num_boards_final_projector_calib=5 `
   --minimum_frames=8 `
   --delay_between_frames=1000 `
   --minimum_board_motion_px=15.0 `
-  --camera_filename=camera_params.xml `
-  --projector_filename=projector_params.xml `
   --projector_offset_y_scale=0.9 `
   --projected_circle_radius=30 `
   --projector_smoothing_rate=0.4 `
-  --write_points=false `
-  --write_extrinsics=true
+  --max_dynamic_stereo_rms=3.0
 ```
 
 ## Important Notes About Defaults

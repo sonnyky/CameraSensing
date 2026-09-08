@@ -36,13 +36,10 @@ namespace Tinker {
 		void setup_parameters(
 			Size boardSize_, 
 			Size imageSize_,
-			string pattern_,
 			float squareSize_, 
 			float aspectRatio_,
 			int nFrames_,
 			int mode_,
-			bool writePoints_,
-			bool writeExtrinsics_,
 			int cameraId_,
 			string outputFileName_);
 
@@ -107,7 +104,6 @@ namespace Tinker {
 		string outputFilename;
 
 		int i, nframes;
-		bool writeExtrinsics, writePoints;
 		bool undistortImage = false;
 		int flags = 0;
 
@@ -117,8 +113,6 @@ namespace Tinker {
 		int calibrationStatus = DETECTION;
 		int cameraId = 0;
 		vector<string> imageList;
-		String pattern = "chessboard";
-
 		bool camera_is_calibrated;
 		vector<vector<Point2f>> imagePoints;
 

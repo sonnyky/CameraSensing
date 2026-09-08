@@ -13,18 +13,15 @@ Tinker::calibration::~calibration()
 {
 }
 
-void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, string outputFileName_)
+void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, Size imageSize_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, int cameraId_, string outputFileName_)
 {
 	camera_calibrator.setup_parameters(
 		boardSize_,
 		imageSize_,
-		pattern_,
 		squareSize_,
 		aspectRatio_,
 		nFrames_,
 		mode_,
-		writePoints_,
-		writeExtrinsics_,
 		cameraId_,
 		outputFileName_
 	);
@@ -246,7 +243,7 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img, bool o
 bool Tinker::calibration::is_dynamic_projector_calibration_satisfied() const
 {
 	return dynamic_accepted_samples >= required_dynamic_projector_samples &&
-		last_dynamic_stereo_rms <= dynamic_stereo_rms_threshold;
+		last_dynamic_stereo_rms <= FLAGS_max_dynamic_stereo_rms;
 }
 
 void Tinker::calibration::reset_dynamic_projection_priming()

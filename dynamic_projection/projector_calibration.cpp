@@ -336,30 +336,3 @@ void Tinker::projector_calibration::saveCameraParams(const string & filename, Si
 		fs << "image_points" << imagePtMat;
 	}
 }
-
-
-bool Tinker::projector_calibration::runAndSave(const string & outputFilename, const vector<vector<Point2f>>& imagePoints, vector<vector<Point3f> > objectPoints, Size imageSize, float aspectRatio, int flags, Mat & _cameraMatrix, Mat & distCoeffs, bool writeExtrinsics, bool writePoints)
-{
-	vector<Mat> rvecs, tvecs;
-	vector<float> reprojErrs;
-	double totalAvgErr = 0;
-
-	bool ok = runCalibration(imagePoints, objectPoints, imageSize,
-		aspectRatio, flags, _cameraMatrix, distCoeffs,
-		rvecs, tvecs, reprojErrs, totalAvgErr);
-	printf("%s. avg reprojection error = %.2f\n",
-		ok ? "Calibration succeeded" : "Calibration failed",
-		totalAvgErr);
-
-	if (ok) {
-		saveCameraParams(outputFilename, imageSize,
-			aspectRatio,
-			flags, _cameraMatrix, distCoeffs,
-			writeExtrinsics ? rvecs : vector<Mat>(),
-			writeExtrinsics ? tvecs : vector<Mat>(),
-			writeExtrinsics ? reprojErrs : vector<float>(),
-			writePoints ? imagePoints : vector<vector<Point2f> >(),
-			totalAvgErr);
-	}
-	return ok;
-}

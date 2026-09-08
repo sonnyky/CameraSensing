@@ -11,17 +11,14 @@ Tinker::camera_calibration::~camera_calibration()
 	calibrationStatus = CAPTURING;
 }
 
-void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, std::string outputFileName_)
+void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, float squareSize_, float aspectRatio_, int nFrames_, int mode_, int cameraId_, std::string outputFileName_)
 {
 	boardSize = boardSize_;
 	imageSize = imageSize_;
-	pattern = pattern_;
 	patternLengthInRealUnits = squareSize_;
 	aspectRatio = aspectRatio_;
 	nframes = nFrames_;
 	calibrationStatus = mode_;
-	writePoints = writePoints_;
-	writeExtrinsics = writeExtrinsics_;
 	cameraId = cameraId_;
 	outputFilename = outputFileName_;
 	load_camera_matrix(outputFileName_);
@@ -31,33 +28,14 @@ bool Tinker::camera_calibration::calibrate(Mat image_, const vector<Point2f>& de
 {
 	Mat viewGray;
 
-	Pattern calibPattern = CHESSBOARD;
-	if (pattern == "circles_grid") {
-		calibPattern = CIRCLES_GRID;
-	}
-	else if (pattern == "asymmetric_circles_grid") {
-		calibPattern = ASYMMETRIC_CIRCLES_GRID;
-	}
+	const Pattern calibPattern = CHESSBOARD;
 	if (!detectedPoints.empty()) {
 		pointbuf = detectedPoints;
 		found = true;
 	}
 	else {
-		switch (calibPattern)
-		{
-		case CHESSBOARD:
-			found = findChessboardCorners(image_, boardSize, pointbuf,
-				CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
-			break;
-		case CIRCLES_GRID:
-			found = findCirclesGrid(image_, boardSize, pointbuf);
-			break;
-		case ASYMMETRIC_CIRCLES_GRID:
-			found = findCirclesGrid(image_, boardSize, pointbuf, CALIB_CB_ASYMMETRIC_GRID);
-			break;
-		default:
-			break;
-		}
+		found = findChessboardCorners(image_, boardSize, pointbuf,
+			CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
 
 		cvtColor(image_, viewGray, COLOR_BGR2GRAY);
 		if (calibPattern == CHESSBOARD && found) {
@@ -129,10 +107,10 @@ bool Tinker::camera_calibration::calibrate(Mat image_, const vector<Point2f>& de
 			saveCameraParams(outputFilename, imageSize,
 				boardSize, patternLengthInRealUnits, aspectRatio,
 				flags, cameraMatrix, distCoeffs,
-				writeExtrinsics ? rvecs : vector<Mat>(),
-				writeExtrinsics ? tvecs : vector<Mat>(),
-				writeExtrinsics ? perViewRms : vector<float>(),
-				writePoints ? imagePoints : vector<vector<Point2f> >(),
+				rvecs,
+				tvecs,
+				perViewRms,
+				imagePoints,
 				totalAvgErr);
 			load_camera_matrix(outputFilename);
 			return true;

@@ -101,12 +101,6 @@ namespace Tinker {
 			const vector<vector<Point2f> >& imagePoints,
 			double totalAvgErr);
 
-		static bool runAndSave(const string& outputFilename,
-			const vector<vector<Point2f> >& imagePoints, vector<vector<Point3f> > objectPoints,
-			Size imageSize,
-			float aspectRatio, int flags, Mat& _cameraMatrix,
-			Mat& distCoeffs, bool writeExtrinsics, bool writePoints);
-
 #pragma endregion
 
 	};

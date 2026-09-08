@@ -16,14 +16,11 @@ namespace Tinker {
 		void setup_camera_calibration_parameters(
 			Size boardSize_,
 			Size imageSize_,
-			string pattern_,
 			float squareSize_,
 			float aspectRatio_,
 			int nFrames_,
 			int delay_,
 			int mode_,
-			bool writePoints_,
-			bool writeExtrinsics_,
 			int cameraId_,
 			string outputFileName_);
 
@@ -95,6 +92,5 @@ namespace Tinker {
 		cv::Mat smoothed_dynamic_board_rot;
 		cv::Mat smoothed_dynamic_board_trans;
 		double last_dynamic_stereo_rms = std::numeric_limits<double>::infinity();
-		double dynamic_stereo_rms_threshold = 3.0;
 	};
 }
