@@ -53,13 +53,14 @@ void Tinker::calibration::setup_projector_calibration_parameters(
 	Size _patternSize, 
 	float _squareSize, 
 	int _nFramesBeforeDynamicProjectorCalib, 
-	int _nFramesTotalProjectorCalib,
+	int _nFramesDynamicProjectorCalib,
 	Pattern _patternType, 
 	float px, 
 	float py
 )
 {
-	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _nFramesBeforeDynamicProjectorCalib, _nFramesTotalProjectorCalib, _patternType, px, py);
+	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _nFramesBeforeDynamicProjectorCalib, _patternType, px, py);
+	required_dynamic_projector_samples = static_cast<uint64_t>(_nFramesDynamicProjectorCalib);
 }
 
 void Tinker::calibration::set_projector_static_image_points()
@@ -235,7 +236,7 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img, bool o
 
 bool Tinker::calibration::is_dynamic_projector_calibration_satisfied() const
 {
-	return projector_calibrator.is_dynamic_calibration_satisfied() &&
+	return dynamic_accepted_samples >= required_dynamic_projector_samples &&
 		last_dynamic_stereo_rms <= dynamic_stereo_rms_threshold;
 }
 
@@ -261,11 +262,16 @@ void Tinker::calibration::set_dynamic_projection_primed(bool primed)
 void Tinker::calibration::reset_dynamic_calibration_solution()
 {
 	dynamic_calibration_has_solution = false;
+	dynamic_accepted_samples = 0;
 }
 
 void Tinker::calibration::mark_dynamic_calibration_solution()
 {
 	dynamic_calibration_has_solution = true;
+	++dynamic_accepted_samples;
+	std::cout << "Accepted dynamic projector sample "
+		<< dynamic_accepted_samples << "/" << required_dynamic_projector_samples
+		<< std::endl;
 }
 
 bool Tinker::calibration::has_dynamic_calibration_solution() const

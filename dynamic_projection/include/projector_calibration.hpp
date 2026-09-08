@@ -43,9 +43,8 @@ namespace Tinker {
 		double get_last_avg_reprojection_error() const { return last_avg_reprojection_error; }
 
 		bool calibrate();
-		bool is_dynamic_calibration_satisfied() const;
 
-		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, int _nFramesTotalProjectorCalib, Pattern _patternType, float px, float py);
+		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, Pattern _patternType, float px, float py);
 
 		void load_calibration_parameters(string fileName);
 
@@ -69,12 +68,10 @@ namespace Tinker {
 		string outputFileName = "projector_params.xml";
 
 		int nFramesBeforeDynamcProjectorCalib;
-		int nFramesTotalProjectorCalib;
 		bool projector_is_calibrated = false;
 		double last_avg_reprojection_error = std::numeric_limits<double>::infinity();
 		std::vector<float> last_per_view_reprojection_errors;
 		float static_reprojection_error_threshold = 2.5f;
-		float dynamic_reprojection_error_threshold = 1.5f;
 		float max_per_view_reprojection_error = 3.0f;
 
 #pragma region projector calibration methods

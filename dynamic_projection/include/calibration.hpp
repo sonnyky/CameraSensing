@@ -1,5 +1,6 @@
 #include "camera_calibration.hpp"
 #include "projector_calibration.hpp"
+#include <cstdint>
 
 namespace Tinker {
 
@@ -27,7 +28,7 @@ namespace Tinker {
 			string outputFileName_);
 
 		void setup_projector_calibration_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize,
-			int _nFramesBeforeDynamicProjectorCalib, int _nFramesTotalProjectorCalib,
+			int _nFramesBeforeDynamicProjectorCalib, int _nFramesDynamicProjectorCalib,
 			Pattern _patternType, float px, float py);
 
 		void set_projector_static_image_points();
@@ -91,6 +92,8 @@ namespace Tinker {
 	private:
 		bool dynamic_projection_primed = false;
 		bool dynamic_calibration_has_solution = false;
+		uint64_t dynamic_accepted_samples = 0;
+		uint64_t required_dynamic_projector_samples = 0;
 		bool has_smoothed_dynamic_board_pose = false;
 		cv::Mat smoothed_dynamic_board_rot;
 		cv::Mat smoothed_dynamic_board_trans;

@@ -135,18 +135,8 @@ bool Tinker::projector_calibration::calibrate()
 
 }
 
-bool Tinker::projector_calibration::is_dynamic_calibration_satisfied() const
-{
-	if (nFramesTotalProjectorCalib <= 0) {
-		return false;
-	}
-	const int requiredFrames = std::max(nFramesTotalProjectorCalib, nFramesBeforeDynamcProjectorCalib + 1);
-	return static_cast<int>(imagePoints.size()) >= requiredFrames &&
-		last_avg_reprojection_error <= dynamic_reprojection_error_threshold;
-}
-
 void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, string _outputFileName, 
-	Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, int _nFramesTotalProjectorCalib, Pattern _patternType, float px, float py)
+	Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, Pattern _patternType, float px, float py)
 {
 	imageSize = _imageSize;
 	outputFileName = _outputFileName;
@@ -156,7 +146,6 @@ void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, 
 	patternPosition = Point2f(px, py);
 
 	nFramesBeforeDynamcProjectorCalib = _nFramesBeforeDynamicProjectorCalib;
-	nFramesTotalProjectorCalib = _nFramesTotalProjectorCalib;
 }
 
 void Tinker::projector_calibration::load_calibration_parameters(string fileName)

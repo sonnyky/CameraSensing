@@ -13,6 +13,32 @@ The implemented workflow is:
 
 The system uses a printed chessboard as the reference plane and an asymmetric circle grid as the projected pattern.
 
+## Build and Run (Windows)
+
+Prerequisites:
+
+- CMake 3.26 or newer and a C++17-capable Visual Studio installation
+- OpenCV development files
+- gflags development files
+- A webcam and a second display connected to the projector
+
+Configure the project from the repository root. Replace the two dependency paths with the locations on your machine:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+  -DOpenCV_DIR="C:/path/to/OpenCVConfig.cmake/directory" `
+  -Dgflags_DIR="C:/path/to/gflags-install/lib/cmake/gflags"
+cmake --build build --config Release
+```
+
+Run the Release executable from the repository root so the default calibration files are written there:
+
+```powershell
+.\build\Release\dynamic_projection.exe
+```
+
+The application opens `ProjectionWindow` fullscreen on a display positioned to the right of the primary 1920-pixel-wide display. Press `Esc` to exit.
+
 ## Calibration Process
 
 ### 1. Camera Calibration
@@ -211,7 +237,7 @@ The application currently supports these command-line parameters from [`include/
 Example launch command using the current defaults:
 
 ```powershell
-.\dynamic_projection.exe `
+.\build\Release\dynamic_projection.exe `
   --pattern_width=9 `
   --pattern_height=6 `
   --pattern_type=chessboard `
