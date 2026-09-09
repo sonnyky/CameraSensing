@@ -289,7 +289,7 @@ At the moment the active board-square size in `main.cpp` determines whether you 
 ### Dynamic Projector Calibration
 
 - Use the offset circle pattern to avoid disturbing chessboard detection too much.
-- Move the board slowly and let accepted frames happen only when the board is stable.
+- Hold the board still long enough for reliable detection, then move it between accepted samples. After the first sample, the capture gate requires the configured minimum corner movement (`--minimum_board_motion_px`) as well as the configured delay.
 - Include meaningful tilt, not just translation on the floor plane.
 - Cover a range of board positions in the camera and projector field of view.
 - If tracking looks good only when the board is flat, you likely need more tilted samples.
