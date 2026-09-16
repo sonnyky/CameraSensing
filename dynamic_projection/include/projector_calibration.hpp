@@ -42,7 +42,7 @@ namespace Tinker {
 		const vector<Mat>& get_board_translations() const { return boardTranslations; }
 		double get_last_avg_reprojection_error() const { return last_avg_reprojection_error; }
 
-		bool calibrate();
+		bool calibrate(Size cameraImageSize);
 
 		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, Pattern _patternType, float px, float py);
 
@@ -71,12 +71,8 @@ namespace Tinker {
 		bool projector_is_calibrated = false;
 		double last_avg_reprojection_error = std::numeric_limits<double>::infinity();
 		std::vector<float> last_per_view_reprojection_errors;
-		float static_reprojection_error_threshold = 2.5f;
-		float max_per_view_reprojection_error = 3.0f;
 
 #pragma region projector calibration methods
-		void retain_best_calibration_views(const std::vector<float>& reprojErrs);
-
 		static double computeReprojectionErrors(
 			const vector<vector<Point3f> >& objectPoints,
 			const vector<vector<Point2f> >& imagePoints,

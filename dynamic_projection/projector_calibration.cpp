@@ -1,6 +1,8 @@
 #include "include\projector_calibration.hpp"
+#include "calibration_view_selection.hpp"
+#include "flags.hpp"
 #include <algorithm>
-#include <numeric>
+#include <type_traits>
 
 Tinker::projector_calibration::projector_calibration()
 {
@@ -54,15 +56,18 @@ void Tinker::projector_calibration::setPatternPosition(float px, float py)
 /*
 when image points and projected object points pairs are obtained on the camera, we use PnP to get board rotations and translations
 */
-bool Tinker::projector_calibration::calibrate()
+bool Tinker::projector_calibration::calibrate(Size cameraImageSize)
 {
-	cout << "current imagePoints size : " << imagePoints.size() << " and we need " << nFramesBeforeDynamcProjectorCalib << endl;
+	const size_t candidateTarget = static_cast<size_t>(nFramesBeforeDynamcProjectorCalib) +
+		static_cast<size_t>(FLAGS_calibration_candidate_margin);
+	cout << "current projector candidate count: " << imagePoints.size()
+		<< "/" << candidateTarget << endl;
 
 	if (projector_is_calibrated) {
 		return true;
 	}
 
-	if (imagePoints.size() >= (unsigned)nFramesBeforeDynamcProjectorCalib) {
+	if (imagePoints.size() >= candidateTarget) {
 		cout << "got enough points for projector intrinsics calibration." << endl;
 
 		// imagePointsProjObj and objectPoints has to have the same length
@@ -81,23 +86,59 @@ bool Tinker::projector_calibration::calibrate()
 			return false;
 		}
 
-		retain_best_calibration_views(reprojErrs);
+		const auto selection = select_calibration_views(
+			reprojErrs, camBoardRotations, camBoardTranslations,
+			frameMeasuredCircleImagePoints, cameraImageSize,
+			static_cast<size_t>(nFramesBeforeDynamcProjectorCalib),
+			FLAGS_max_projector_per_view_rms,
+			FLAGS_minimum_calibration_position_span,
+			FLAGS_minimum_calibration_distance_ratio,
+			FLAGS_minimum_calibration_orientation_span_deg);
+		cout << "Projector selection: eligible threshold=" << selection.robustRmsThreshold
+			<< ", position span=" << selection.positionSpan
+			<< ", distance ratio=" << selection.distanceRatio
+			<< ", orientation span=" << selection.orientationSpanDegrees << " deg" << endl;
+		if (!selection.hasEnoughQualityViews || !selection.hasRequiredCoverage) {
+			cout << "Projector calibration needs more high-quality, diverse views." << endl;
+			return false;
+		}
+
+		auto gatherSelected = [&selection](const auto& views) {
+			using ViewType = typename std::decay_t<decltype(views)>::value_type;
+			std::vector<ViewType> selected;
+			selected.reserve(selection.indices.size());
+			for (size_t index : selection.indices) {
+				selected.push_back(views[index]);
+			}
+			return selected;
+		};
+		auto selectedImagePoints = gatherSelected(imagePoints);
+		auto selectedObjectPoints = gatherSelected(objectPoints);
+		auto selectedMeasuredPoints = gatherSelected(frameMeasuredCircleImagePoints);
+		auto selectedCameraRotations = gatherSelected(camBoardRotations);
+		auto selectedCameraTranslations = gatherSelected(camBoardTranslations);
 
 		rvecs.clear();
 		tvecs.clear();
 		reprojErrs.clear();
 		totalAvgErr = 0.0;
 
-		if (runCalibration(imagePoints, objectPoints, imageSize, 1, 0,
+		if (runCalibration(selectedImagePoints, selectedObjectPoints, imageSize, 1, 0,
 			cameraMatrix, distCoeffs, rvecs, tvecs, reprojErrs, totalAvgErr)) {
 			last_avg_reprojection_error = totalAvgErr;
 			last_per_view_reprojection_errors = reprojErrs;
 			printf("Projector avg reprojection error after filtering = %.2f\n", totalAvgErr);
 
-			if (totalAvgErr > static_reprojection_error_threshold) {
+			if (totalAvgErr > FLAGS_max_projector_rms) {
 				cout << "Projector reprojection error above static threshold: " << totalAvgErr << endl;
 				return false;
 			}
+
+			imagePoints.swap(selectedImagePoints);
+			objectPoints.swap(selectedObjectPoints);
+			frameMeasuredCircleImagePoints.swap(selectedMeasuredPoints);
+			camBoardRotations.swap(selectedCameraRotations);
+			camBoardTranslations.swap(selectedCameraTranslations);
 
 			saveCameraParams(outputFileName, imageSize,
 				1,
@@ -170,55 +211,6 @@ void Tinker::projector_calibration::reset_boards()
 	camBoardTranslations.clear();
 	last_avg_reprojection_error = std::numeric_limits<double>::infinity();
 	last_per_view_reprojection_errors.clear();
-}
-
-void Tinker::projector_calibration::retain_best_calibration_views(const std::vector<float>& reprojErrs)
-{
-	if (reprojErrs.empty()) {
-		return;
-	}
-
-	std::vector<size_t> candidateIndices;
-	candidateIndices.reserve(reprojErrs.size());
-	for (size_t i = 0; i < reprojErrs.size(); ++i) {
-		if (reprojErrs[i] <= max_per_view_reprojection_error) {
-			candidateIndices.push_back(i);
-		}
-	}
-
-	if (candidateIndices.size() < static_cast<size_t>(nFramesBeforeDynamcProjectorCalib)) {
-		candidateIndices.resize(reprojErrs.size());
-		std::iota(candidateIndices.begin(), candidateIndices.end(), 0);
-	}
-
-	std::sort(candidateIndices.begin(), candidateIndices.end(),
-		[&reprojErrs](size_t a, size_t b) {
-			return reprojErrs[a] < reprojErrs[b];
-		});
-
-	const size_t keepCount = std::min(
-		imagePoints.size(),
-		static_cast<size_t>(std::max(nFramesBeforeDynamcProjectorCalib, 12)));
-
-	if (candidateIndices.size() > keepCount) {
-		candidateIndices.resize(keepCount);
-	}
-
-	auto gatherViews = [&candidateIndices](auto& views) {
-		using ViewType = typename std::decay_t<decltype(views)>::value_type;
-		std::vector<ViewType> filteredViews;
-		filteredViews.reserve(candidateIndices.size());
-		for (size_t index : candidateIndices) {
-			filteredViews.push_back(views[index]);
-		}
-		views.swap(filteredViews);
-	};
-
-	gatherViews(imagePoints);
-	gatherViews(objectPoints);
-	gatherViews(frameMeasuredCircleImagePoints);
-	gatherViews(camBoardRotations);
-	gatherViews(camBoardTranslations);
 }
 
 double Tinker::projector_calibration::computeReprojectionErrors(const vector<vector<Point3f>>& objectPoints, const vector<vector<Point2f>>& imagePoints, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const Mat & cameraMatrix, const Mat & distCoeffs, vector<float>& perViewErrors)

@@ -62,6 +62,7 @@ namespace Tinker {
 		bool calibrate_projector(Mat img);
 
 		void stereo_calibrate();
+		void save_stereo_calibration() const;
 
 	private:
 
@@ -92,5 +93,6 @@ namespace Tinker {
 		cv::Mat smoothed_dynamic_board_rot;
 		cv::Mat smoothed_dynamic_board_trans;
 		double last_dynamic_stereo_rms = std::numeric_limits<double>::infinity();
+		string projector_output_filename;
 	};
 }

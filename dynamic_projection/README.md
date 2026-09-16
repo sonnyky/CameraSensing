@@ -22,12 +22,12 @@ Prerequisites:
 - gflags development files
 - A webcam and a second display connected to the projector
 
-Configure the project from the repository root. Replace the two dependency paths with the locations on your machine:
+Configure the project from the repository root. CMake discovers gflags from its installed package prefix. If gflags is not installed in a standard search location, add its install prefix to `CMAKE_PREFIX_PATH` (as shown below):
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
   -DOpenCV_DIR="C:/path/to/OpenCVConfig.cmake/directory" `
-  -Dgflags_DIR="C:/path/to/gflags-install/lib/cmake/gflags"
+  -DCMAKE_PREFIX_PATH="C:/path/to/gflags-install"
 cmake --build build --config Release
 ```
 
@@ -39,7 +39,7 @@ Run the Release executable. By default, calibration files are written beside the
 
 The application opens `ProjectionWindow` fullscreen on a display positioned to the right of the primary 1920-pixel-wide display. Press `Esc` to exit.
 
-Both calibration files always include the solved parameters, reprojection errors, extrinsics, and detected image points. Set `--calibration_output_dir` to write them elsewhere.
+Both calibration files include their solved intrinsic parameters, per-view reprojection errors, per-view extrinsics, and detected image points. After dynamic calibration succeeds, `projector_params.xml` also includes the final camera-to-projector rotation vector, rotation matrix, translation vector, and stereo RMS error. Set `--calibration_output_dir` to write the files elsewhere.
 
 ## Calibration Process
 
@@ -49,6 +49,12 @@ For camera, static-projector, and dynamic-projector calibration, the app accepts
 
 - the configured minimum interval since the previous accepted sample
 - chessboard-corner RMS movement at or above `--minimum_board_motion_px`
+
+Camera and static-projector calibration collect `--calibration_candidate_margin` extra accepted views before selecting their final retained set. Candidate views first pass a robust per-view RMS gate based on the median and median absolute deviation, capped by the configured per-view RMS limit. The retained views are then chosen for diversity across detected-pattern position, board depth, tilt, and roll. Calibration continues collecting views until selection-time coverage checks pass and the final recalibration meets the aggregate-RMS limit.
+
+Position coverage uses the chessboard-corner centroid for camera calibration, but the detected projected-circle centroid for static-projector calibration. It measures the largest pairwise image-space centroid separation after normalizing X by image width and Y by image height; it does not require coverage of particular image regions. Moving only the printed board within an unchanged plane may therefore provide little static-projector position variation.
+
+Depth coverage uses the far-to-near ratio of the absolute board-origin Z translation, and tilt coverage uses the largest pairwise board-normal angle. Camera depth and tilt checks use preliminary calibration poses and are not repeated after the final camera refit. Static-projector checks use the camera-estimated board poses. These are selection-time coverage tests, not a guarantee about poses recomputed with the final camera intrinsics.
 
 ### 1. Camera Calibration
 
@@ -89,7 +95,7 @@ Where:
 - \(K\) is the camera intrinsic matrix
 - \(R,t\) are the board pose relative to the camera
 
-The code keeps the best camera views by per-view reprojection RMS before saving the final calibration.
+The code rejects camera RMS outliers, selects `--minimum_frames` diverse views from the remaining candidate pool, and recalibrates before saving the final calibration.
 
 ### 2. Static Projector Calibration
 
@@ -131,7 +137,7 @@ Where:
 - \((u_p,v_p)\) is a projector pixel
 - \(K_p\) is the projector intrinsic matrix
 
-This phase also rejects poor projector views by reprojection error before accepting the static calibration.
+This phase also rejects projector RMS outliers, selects a diverse retained set, and enforces an aggregate projector RMS limit before accepting the static calibration.
 
 ### 3. Stereo Camera-Projector Calibration
 
@@ -169,16 +175,8 @@ The code:
 Projection is done by composing board-to-camera and camera-to-projector transforms:
 
 \[
-\begin{bmatrix}
-R_{bp} & t_{bp}
-\end{bmatrix}
-=
-\begin{bmatrix}
-R_{cp} & t_{cp}
-\end{bmatrix}
-\begin{bmatrix}
-R_{bc} & t_{bc}
-\end{bmatrix}
+R_{bp} = R_{cp} R_{bc}, \qquad
+t_{bp} = R_{cp} t_{bc} + t_{cp}
 \]
 
 Then:
@@ -227,9 +225,9 @@ The application currently supports these command-line parameters from [`include/
 |---|---:|---|
 | `--pattern_width` | `9` | Number of inner corners across the calibration board width |
 | `--pattern_height` | `6` | Number of inner corners across the calibration board height |
-| `--num_boards_before_dynamic_projector_calib` | `8` | Minimum accepted projector samples before entering dynamic calibration |
+| `--num_boards_before_dynamic_projector_calib` | `8` | Number of retained static-projector views required before dynamic calibration |
 | `--num_boards_final_projector_calib` | `5` | Minimum dynamic accepted samples target used for completion |
-| `--minimum_frames` | `8` | Minimum accepted camera calibration images |
+| `--minimum_frames` | `8` | Number of retained camera calibration views |
 | `--delay_between_frames` | `1000` | Minimum interval in milliseconds after the first accepted sample in a phase |
 | `--minimum_board_motion_px` | `15.0` | Minimum chessboard-corner RMS movement in pixels after the first accepted sample in a phase |
 | `--calibration_output_dir` | Executable directory | Directory for `camera_params.xml` and `projector_params.xml` |
@@ -237,6 +235,14 @@ The application currently supports these command-line parameters from [`include/
 | `--projected_circle_radius` | `30` | Radius of each projected circle in projector pixels |
 | `--projector_smoothing_rate` | `0.4` | Smoothing factor for dynamic pose and projector-point updates |
 | `--max_dynamic_stereo_rms` | `3.0` | Maximum stereo RMS error allowed before entering tracking mode |
+| `--calibration_candidate_margin` | `4` | Extra camera and static-projector candidates collected before view selection |
+| `--max_camera_per_view_rms` | `2.0` | Absolute per-view camera RMS eligibility limit |
+| `--max_camera_rms` | `1.5` | Maximum final aggregate camera RMS |
+| `--max_projector_per_view_rms` | `3.0` | Absolute per-view projector RMS eligibility limit |
+| `--max_projector_rms` | `2.5` | Maximum final aggregate projector RMS |
+| `--minimum_calibration_position_span` | `0.25` | Minimum normalized detected-pattern centroid span at view selection |
+| `--minimum_calibration_distance_ratio` | `1.1` | Minimum far-to-near board-origin depth ratio at view selection |
+| `--minimum_calibration_orientation_span_deg` | `10.0` | Minimum board-normal angular span at view selection |
 | `--h` | `false` | Print usage |
 
 ## Default Launch Command
@@ -255,7 +261,15 @@ Example launch command using the current defaults:
   --projector_offset_y_scale=0.9 `
   --projected_circle_radius=30 `
   --projector_smoothing_rate=0.4 `
-  --max_dynamic_stereo_rms=3.0
+  --max_dynamic_stereo_rms=3.0 `
+  --calibration_candidate_margin=4 `
+  --max_camera_per_view_rms=2.0 `
+  --max_camera_rms=1.5 `
+  --max_projector_per_view_rms=3.0 `
+  --max_projector_rms=2.5 `
+  --minimum_calibration_position_span=0.25 `
+  --minimum_calibration_distance_ratio=1.1 `
+  --minimum_calibration_orientation_span_deg=10.0
 ```
 
 ## Important Notes About Defaults

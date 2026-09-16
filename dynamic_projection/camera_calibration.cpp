@@ -1,4 +1,6 @@
 #include "camera_calibration.hpp"
+#include "calibration_view_selection.hpp"
+#include "flags.hpp"
 #include <algorithm>
 
 Tinker::camera_calibration::camera_calibration()
@@ -48,79 +50,71 @@ bool Tinker::camera_calibration::calibrate(Mat image_, const vector<Point2f>& de
 		imagePoints.push_back(pointbuf);
 	}
 
-	// Once we have more points than the threshold we run calibration on the aggregated points to get a global model
-	if (imagePoints.size() >= (unsigned)nframes)
+	const size_t candidateTarget = static_cast<size_t>(nframes) +
+		static_cast<size_t>(FLAGS_calibration_candidate_margin);
+	if (imagePoints.size() >= candidateTarget)
 	{
 		vector<Mat> rvecs, tvecs;
 		vector<float> perViewRms;
 		double totalAvgErr = 0;
 
-		// here cameraMatrix and distCoeffs are the calibration results from the aggregated image points
-		bool calibSuccess = runCalibration(imagePoints, imageSize, boardSize, calibPattern, patternLengthInRealUnits,
+		const bool preliminarySuccess = runCalibration(imagePoints, imageSize, boardSize, calibPattern, patternLengthInRealUnits,
 			aspectRatio, flags, cameraMatrix, distCoeffs,
 			rvecs, tvecs, perViewRms, totalAvgErr);
 		printf("%s. avg reprojection error for this batch = %.2f\n",
-			calibSuccess ? "Calibration succeeded" : "Calibration failed",
+			preliminarySuccess ? "Preliminary camera calibration succeeded" : "Preliminary camera calibration failed",
 			totalAvgErr);
-
-		// Keep the best views by reprojection error instead of dropping everything
-		// above a hard threshold, which can wipe the capture set and block progress.
-		std::vector<std::pair<float, size_t>> rankedViews;
-		rankedViews.reserve(perViewRms.size());
-		for (size_t i = 0; i < perViewRms.size(); ++i) {
-			rankedViews.emplace_back(perViewRms[i], i);
-		}
-		std::sort(rankedViews.begin(), rankedViews.end(),
-			[](const auto& a, const auto& b) {
-				return a.first < b.first;
-			});
-
-		const size_t keepCount = std::min(
-			imagePoints.size(),
-			static_cast<size_t>(std::max(nframes, 12)));
-
-		std::vector<std::vector<cv::Point2f>> filteredImagePoints;
-		std::vector<float> filteredRms;
-		filteredImagePoints.reserve(keepCount);
-		filteredRms.reserve(keepCount);
-
-		for (size_t i = 0; i < keepCount && i < rankedViews.size(); ++i) {
-			const size_t viewIndex = rankedViews[i].second;
-			filteredImagePoints.push_back(imagePoints[viewIndex]);
-			filteredRms.push_back(rankedViews[i].first);
-		}
-
-		imagePoints.swap(filteredImagePoints);
-		perViewRms.swap(filteredRms);
-
-		// if we still have enough points after removing high rms views then we run the calibration one more time for the final camera values
-		// if we don't have enouhgh points then we start taking views again
-		if (imagePoints.size() >= (unsigned)nframes)
-		{
-			bool calibSuccess = runCalibration(imagePoints, imageSize, boardSize, calibPattern, patternLengthInRealUnits,
-				aspectRatio, flags, cameraMatrix, distCoeffs,
-				rvecs, tvecs, perViewRms, totalAvgErr);
-			printf("%s. avg reprojection error for this batch = %.2f\n",
-				calibSuccess ? "Final camera Calibration succeeded" : "Final Camera Calibration failed",
-				totalAvgErr);
-
-			saveCameraParams(outputFilename, imageSize,
-				boardSize, patternLengthInRealUnits, aspectRatio,
-				flags, cameraMatrix, distCoeffs,
-				rvecs,
-				tvecs,
-				perViewRms,
-				imagePoints,
-				totalAvgErr);
-			load_camera_matrix(outputFilename);
-			return true;
-		}
-		else {
+		if (!preliminarySuccess) {
 			return false;
-		}		
+		}
+
+		const auto selection = select_calibration_views(
+			perViewRms, rvecs, tvecs, imagePoints, imageSize,
+			static_cast<size_t>(nframes), FLAGS_max_camera_per_view_rms,
+			FLAGS_minimum_calibration_position_span,
+			FLAGS_minimum_calibration_distance_ratio,
+			FLAGS_minimum_calibration_orientation_span_deg);
+		std::cout << "Camera selection: eligible threshold=" << selection.robustRmsThreshold
+			<< ", position span=" << selection.positionSpan
+			<< ", distance ratio=" << selection.distanceRatio
+			<< ", orientation span=" << selection.orientationSpanDegrees << " deg" << std::endl;
+		if (!selection.hasEnoughQualityViews || !selection.hasRequiredCoverage) {
+			std::cout << "Camera calibration needs more high-quality, diverse views." << std::endl;
+			return false;
+		}
+
+		std::vector<std::vector<cv::Point2f>> selectedImagePoints;
+		selectedImagePoints.reserve(selection.indices.size());
+		for (size_t index : selection.indices) {
+			selectedImagePoints.push_back(imagePoints[index]);
+		}
+
+		rvecs.clear();
+		tvecs.clear();
+		perViewRms.clear();
+		totalAvgErr = 0.0;
+		const bool finalSuccess = runCalibration(selectedImagePoints, imageSize, boardSize, calibPattern,
+			patternLengthInRealUnits, aspectRatio, flags, cameraMatrix, distCoeffs,
+			rvecs, tvecs, perViewRms, totalAvgErr);
+		printf("%s. avg reprojection error = %.2f\n",
+			finalSuccess ? "Final camera calibration succeeded" : "Final camera calibration failed",
+			totalAvgErr);
+		if (!finalSuccess || totalAvgErr > FLAGS_max_camera_rms) {
+			std::cout << "Camera aggregate RMS is above the completion threshold." << std::endl;
+			return false;
+		}
+
+		imagePoints.swap(selectedImagePoints);
+		saveCameraParams(outputFilename, imageSize,
+			boardSize, patternLengthInRealUnits, aspectRatio,
+			flags, cameraMatrix, distCoeffs,
+			rvecs, tvecs, perViewRms, imagePoints, totalAvgErr);
+		load_camera_matrix(outputFilename);
+		return true;
 	}
 	else {
-		cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
+		cout << "more camera candidates needed. we currently have: " << imagePoints.size()
+			<< "/" << candidateTarget << " views." << endl;
 	}
 
 	return false;

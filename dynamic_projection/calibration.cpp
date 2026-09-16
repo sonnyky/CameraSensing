@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 #include <algorithm>
+#include <stdexcept>
 #include "flags.hpp"
 
 Tinker::calibration::calibration()
@@ -52,6 +53,7 @@ void Tinker::calibration::setup_projector_calibration_parameters(
 )
 {
 	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _nFramesBeforeDynamicProjectorCalib, _patternType, px, py);
+	projector_output_filename = _outputFileName;
 	required_dynamic_projector_samples = static_cast<uint64_t>(_nFramesDynamicProjectorCalib);
 }
 
@@ -355,7 +357,7 @@ bool Tinker::calibration::calibrate_projector(Mat img)
 		commit_accepted_board_sample(boardPoints);
 		
 		cout << "calibrating projector inside calibrate_projector"  << endl;
-		if (projector_calibrator.calibrate()) {
+		if (projector_calibrator.calibrate(camera_calibrator.get_image_size())) {
 			cout << "projector calibration finished!" << endl;
 			stereo_calibrate();
 
@@ -418,6 +420,27 @@ void Tinker::calibration::stereo_calibrate()
 	std::cout << "Dynamic stereo RMS error: " << stereoRms << std::endl;
 
 	cv::Rodrigues(rotation3x3, rotCamToProj);
+}
+
+void Tinker::calibration::save_stereo_calibration() const
+{
+	if (projector_output_filename.empty() || rotCamToProj.empty() || transCamToProj.empty() ||
+		!std::isfinite(last_dynamic_stereo_rms)) {
+		throw std::runtime_error("Cannot save camera-to-projector extrinsics before stereo calibration succeeds.");
+	}
+
+	cv::Mat rotationMatrix;
+	cv::Rodrigues(rotCamToProj, rotationMatrix);
+
+	cv::FileStorage fs(projector_output_filename, cv::FileStorage::APPEND);
+	if (!fs.isOpened()) {
+		throw std::runtime_error("Unable to append stereo calibration to: " + projector_output_filename);
+	}
+
+	fs << "Rotation_Vector" << rotCamToProj;
+	fs << "Rotation_Matrix" << rotationMatrix;
+	fs << "Translation_Vector" << transCamToProj;
+	fs << "stereo_rms_error" << last_dynamic_stereo_rms;
 }
 
 

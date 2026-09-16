@@ -155,6 +155,7 @@ int main(int argc, char* argv[])
 
 				if (calib.has_dynamic_calibration_solution() &&
 					calib.is_dynamic_projector_calibration_satisfied()) {
+					calib.save_stereo_calibration();
 					std::cout << "Dynamic Projector Calibration complete. Switching to Tracking State." << std::endl;
 					capture_state.transition_to<TrackingState>();
 				}
