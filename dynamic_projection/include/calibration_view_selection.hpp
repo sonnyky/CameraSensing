@@ -13,6 +13,7 @@ namespace Tinker {
 		double distanceRatio = 1.0;
 		double orientationSpanDegrees = 0.0;
 		bool hasEnoughQualityViews = false;
+		size_t eligibleViewCount = 0;
 		bool hasRequiredCoverage = false;
 	};
 

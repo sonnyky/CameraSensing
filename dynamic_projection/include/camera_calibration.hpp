@@ -11,6 +11,7 @@
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/videoio.hpp"
 #include "opencv2/highgui.hpp"
+#include "board_orientation_tracker.hpp"
 
 #include <cctype>
 #include <stdio.h>
@@ -90,10 +91,13 @@ namespace Tinker {
 		Size get_image_size() { return imageSize; };
 
 		vector<Point2f> get_detected_board_points() { return detected_board_points; };
+		const string& get_orientation_status() const { return orientation_status; }
 
 	private:
 
 		vector<Point2f> detected_board_points;
+		BoardOrientationTracker orientation_tracker;
+		string orientation_status;
 
 		
 

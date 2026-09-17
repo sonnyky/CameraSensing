@@ -3,6 +3,8 @@
 #include "flags.hpp"
 #include <algorithm>
 #include <type_traits>
+#include <stdexcept>
+#include "projector_distortion_validation.hpp"
 
 Tinker::projector_calibration::projector_calibration()
 {
@@ -14,14 +16,15 @@ Tinker::projector_calibration::~projector_calibration()
 
 void Tinker::projector_calibration::load(string projector_config)
 {
+    load_calibration_parameters(projector_config);
 }
 
 void Tinker::projector_calibration::set_static_candidate_image_points()
 {
 	candidate_image_points.clear();
 
-	const int screenWidth = 1920;
-	const int screenHeight = 1080;
+	const int screenWidth = imageSize.width;
+	const int screenHeight = imageSize.height;
 	const float spacing = squareSize;
 
 	// Calculate total width and height of the asymmetric circle grid
@@ -29,8 +32,22 @@ void Tinker::projector_calibration::set_static_candidate_image_points()
 	float patternHeight = (circlePatternSize.height - 1) * spacing;
 
 	// Center the pattern in the middle of the projector screen
-	patternPosition.x = (screenWidth - patternWidth) / 2.0f;
-	patternPosition.y = (screenHeight - patternHeight) / 2.0f;
+	patternPosition.x = static_cast<float>(screenWidth * FLAGS_static_projector_center_x - patternWidth / 2.0);
+	patternPosition.y = static_cast<float>(screenHeight * FLAGS_static_projector_center_y - patternHeight / 2.0);
+	const double radius = static_cast<double>(FLAGS_projected_circle_radius);
+	if (patternPosition.x - radius < 0 || patternPosition.y - radius < 0 ||
+		patternPosition.x + patternWidth + radius >= screenWidth ||
+		patternPosition.y + patternHeight + radius >= screenHeight) {
+		throw std::invalid_argument("Static projector grid is clipped: reduce spacing/radius or move its center inward.");
+	}
+	cout << "Static projector grid footprint: " << patternWidth + 2 * radius << " x "
+		<< patternHeight + 2 * radius << " pixels; center="
+		<< screenWidth * FLAGS_static_projector_center_x << ","
+		<< screenHeight * FLAGS_static_projector_center_y << endl;
+	const double centerSpan = std::hypot(patternWidth / screenWidth, patternHeight / screenHeight);
+	if (centerSpan < FLAGS_minimum_projector_pattern_span) {
+		throw std::invalid_argument("Static grid is too small for --minimum_projector_pattern_span; increase spacing before collecting calibration frames.");
+	}
 
 	// Generate circle points
 	for (int i = 0; i < circlePatternSize.height; i++) {
@@ -71,7 +88,9 @@ bool Tinker::projector_calibration::calibrate(Size cameraImageSize)
 		cout << "got enough points for projector intrinsics calibration." << endl;
 
 		// imagePointsProjObj and objectPoints has to have the same length
-		if (imagePoints.size() != objectPoints.size()) {
+		if (imagePoints.size() != objectPoints.size() || imagePoints.size() != frameMeasuredBoardImagePoints.size() ||
+			imagePoints.size() != frameMeasuredCircleImagePoints.size() || imagePoints.size() != camBoardRotations.size() ||
+			imagePoints.size() != camBoardTranslations.size()) {
 			cout << "Mismatched sizes. imagePointsProjObj : " << imagePoints.size()
 				<< "and objectPoints : "<< objectPoints.size() << endl;
 			return false;
@@ -80,26 +99,64 @@ bool Tinker::projector_calibration::calibrate(Size cameraImageSize)
 		vector<Mat> rvecs, tvecs;
 		vector<float> reprojErrs;
 		double totalAvgErr = 0.0;
+		Mat fittedMatrix, fittedDistortion;
 
 		if (!runCalibration(imagePoints, objectPoints, imageSize, 1, 0,
-			cameraMatrix, distCoeffs, rvecs, tvecs, reprojErrs, totalAvgErr)) {
+			fittedMatrix, fittedDistortion, rvecs, tvecs, reprojErrs, totalAvgErr)) {
+			cout << "Projector preliminary fit failed intrinsic/distortion validation; working model unchanged." << endl;
 			return false;
 		}
 
 		const auto selection = select_calibration_views(
 			reprojErrs, camBoardRotations, camBoardTranslations,
-			frameMeasuredCircleImagePoints, cameraImageSize,
+			frameMeasuredBoardImagePoints, cameraImageSize,
 			static_cast<size_t>(nFramesBeforeDynamcProjectorCalib),
 			FLAGS_max_projector_per_view_rms,
-			FLAGS_minimum_calibration_position_span,
+			FLAGS_minimum_projector_board_position_span,
 			FLAGS_minimum_calibration_distance_ratio,
 			FLAGS_minimum_calibration_orientation_span_deg);
-		cout << "Projector selection: eligible threshold=" << selection.robustRmsThreshold
-			<< ", position span=" << selection.positionSpan
+		for (size_t i = 0; i < reprojErrs.size(); ++i) {
+			const bool eligible = std::isfinite(reprojErrs[i]) && reprojErrs[i] <= selection.robustRmsThreshold;
+			const bool retained = std::find(selection.indices.begin(), selection.indices.end(), i) != selection.indices.end();
+			cout << "Projector candidate " << i + 1 << ": preliminary per-view RMS=" << reprojErrs[i]
+				<< " px; " << (!eligible ? "RMS-rejected" : !selection.hasEnoughQualityViews ? "eligible (diversity selection not evaluated)" :
+					retained ? "selected for refit" : "eligible, not selected") << endl;
+		}
+		cout << "Projector selection: quality views=" << selection.eligibleViewCount << "/" << nFramesBeforeDynamcProjectorCalib
+			<< ", eligible RMS threshold=" << selection.robustRmsThreshold << endl;
+		if (!selection.hasEnoughQualityViews) {
+			cout << "Projector board coverage: not evaluated (too few RMS-eligible views)." << endl;
+			cout << "Projector RMS rejection: not enough views below the per-view threshold; improve focus, exposure and board flatness." << endl;
+			return false;
+		}
+		cout << "Projector board coverage: position span=" << selection.positionSpan
 			<< ", distance ratio=" << selection.distanceRatio
 			<< ", orientation span=" << selection.orientationSpanDegrees << " deg" << endl;
-		if (!selection.hasEnoughQualityViews || !selection.hasRequiredCoverage) {
-			cout << "Projector calibration needs more high-quality, diverse views." << endl;
+		bool coveragePassed = true;
+		auto requireCoverage = [&coveragePassed](const char* name, double actual, double required, const char* advice) {
+			if (actual < required) {
+				cout << "Projector coverage rejection: " << name << "=" << actual << " < " << required << ". " << advice << endl;
+				coveragePassed = false;
+			}
+		};
+		requireCoverage("board position span", selection.positionSpan, FLAGS_minimum_projector_board_position_span, "Translate the board while keeping both patterns visible.");
+		requireCoverage("board distance ratio", selection.distanceRatio, FLAGS_minimum_calibration_distance_ratio, "Move the board nearer/farther.");
+		requireCoverage("board tilt span (deg)", selection.orientationSpanDegrees, FLAGS_minimum_calibration_orientation_span_deg, "Tilt the board in different directions.");
+		Point2f minimumPoint(static_cast<float>(imageSize.width), static_cast<float>(imageSize.height));
+		Point2f maximumPoint(0, 0);
+		for (size_t index : selection.indices) {
+			for (const auto& point : imagePoints[index]) {
+				minimumPoint.x = std::min(minimumPoint.x, point.x);
+				minimumPoint.y = std::min(minimumPoint.y, point.y);
+				maximumPoint.x = std::max(maximumPoint.x, point.x);
+				maximumPoint.y = std::max(maximumPoint.y, point.y);
+			}
+		}
+		const double projectorSpan = std::hypot((maximumPoint.x - minimumPoint.x) / imageSize.width,
+			(maximumPoint.y - minimumPoint.y) / imageSize.height);
+		cout << "Projector-image circle-center footprint span=" << projectorSpan << endl;
+		requireCoverage("projector pattern span", projectorSpan, FLAGS_minimum_projector_pattern_span, "Increase static spacing; extra board movement cannot enlarge a fixed projector grid.");
+		if (!coveragePassed) {
 			return false;
 		}
 
@@ -115,6 +172,7 @@ bool Tinker::projector_calibration::calibrate(Size cameraImageSize)
 		auto selectedImagePoints = gatherSelected(imagePoints);
 		auto selectedObjectPoints = gatherSelected(objectPoints);
 		auto selectedMeasuredPoints = gatherSelected(frameMeasuredCircleImagePoints);
+		auto selectedMeasuredBoardPoints = gatherSelected(frameMeasuredBoardImagePoints);
 		auto selectedCameraRotations = gatherSelected(camBoardRotations);
 		auto selectedCameraTranslations = gatherSelected(camBoardTranslations);
 
@@ -124,25 +182,32 @@ bool Tinker::projector_calibration::calibrate(Size cameraImageSize)
 		totalAvgErr = 0.0;
 
 		if (runCalibration(selectedImagePoints, selectedObjectPoints, imageSize, 1, 0,
-			cameraMatrix, distCoeffs, rvecs, tvecs, reprojErrs, totalAvgErr)) {
+			fittedMatrix, fittedDistortion, rvecs, tvecs, reprojErrs, totalAvgErr)) {
 			last_avg_reprojection_error = totalAvgErr;
 			last_per_view_reprojection_errors = reprojErrs;
 			printf("Projector avg reprojection error after filtering = %.2f\n", totalAvgErr);
+			for (size_t i = 0; i < reprojErrs.size(); ++i) {
+				cout << "Projector candidate " << selection.indices[i] + 1
+					<< ": final refit per-view RMS=" << reprojErrs[i] << " px" << endl;
+			}
 
-			if (totalAvgErr > FLAGS_max_projector_rms) {
+			if (!std::isfinite(totalAvgErr) || totalAvgErr > FLAGS_max_projector_rms) {
 				cout << "Projector reprojection error above static threshold: " << totalAvgErr << endl;
 				return false;
 			}
 
 			imagePoints.swap(selectedImagePoints);
+			cameraMatrix=fittedMatrix;
+			distCoeffs=fittedDistortion;
 			objectPoints.swap(selectedObjectPoints);
 			frameMeasuredCircleImagePoints.swap(selectedMeasuredPoints);
+			frameMeasuredBoardImagePoints.swap(selectedMeasuredBoardPoints);
 			camBoardRotations.swap(selectedCameraRotations);
 			camBoardTranslations.swap(selectedCameraTranslations);
 
 			saveCameraParams(outputFileName, imageSize,
 				1,
-				0, cameraMatrix, distCoeffs,
+				CALIB_FIX_K3 | CALIB_FIX_K4 | CALIB_FIX_K5 | CALIB_FIX_K6, cameraMatrix, distCoeffs,
 				rvecs,
 				tvecs,
 				reprojErrs,
@@ -171,6 +236,7 @@ bool Tinker::projector_calibration::calibrate(Size cameraImageSize)
 
 			return true;
 		}
+		cout << "Projector final refit failed intrinsic/distortion validation; working model unchanged. Collect clearer, broader views." << endl;
 	}
 	return false;
 
@@ -195,10 +261,18 @@ void Tinker::projector_calibration::load_calibration_parameters(string fileName)
 	bool found = stat(fileName.c_str(), &buffer) == 0;
 	cout << "Camera calibration file exists : " << found << endl;
 	if (found) {
-		projector_is_calibrated = true;
 		FileStorage fs(fileName, FileStorage::READ);
-		fs["camera_matrix"] >> cameraMatrix;
-		fs["distortion_coefficients"] >> distCoeffs;
+		Mat loadedMatrix, loadedDistortion;
+		fs["camera_matrix"] >> loadedMatrix;
+		fs["distortion_coefficients"] >> loadedDistortion;
+		string reason;
+		if (!valid_projector_distortion(loadedMatrix, loadedDistortion, imageSize, reason)) {
+			cout << "Projector calibration load rejected: " << reason << ". Recalibrate." << endl;
+			return;
+		}
+		loadedMatrix.convertTo(cameraMatrix,CV_64F);
+		loadedDistortion.convertTo(distCoeffs,CV_64F);
+		projector_is_calibrated = true;
 	}
 }
 
@@ -207,6 +281,7 @@ void Tinker::projector_calibration::reset_boards()
 	objectPoints.clear();
 	imagePoints.clear();
 	frameMeasuredCircleImagePoints.clear();
+	frameMeasuredBoardImagePoints.clear();
 	camBoardRotations.clear();
 	camBoardTranslations.clear();
 	last_avg_reprojection_error = std::numeric_limits<double>::infinity();
@@ -246,11 +321,15 @@ bool Tinker::projector_calibration::runCalibration(vector<vector<Point2f>> image
 	objectPoints.resize(imagePoints.size(), objectPoints[0]);
 
 	double rms = calibrateCamera(objectPoints, imagePoints, imageSize, cameraMatrix,
-		distCoeffs, rvecs, tvecs, flags | CALIB_FIX_K4 | CALIB_FIX_K5);
-	///*|CALIB_FIX_K3*/|CALIB_FIX_K4|CALIB_FIX_K5);
+		distCoeffs, rvecs, tvecs, flags | CALIB_FIX_K3 | CALIB_FIX_K4 | CALIB_FIX_K5 | CALIB_FIX_K6);
 	printf("RMS error reported by calibrateCamera for projector : %g\n", rms);
 
 	bool ok = checkRange(cameraMatrix) && checkRange(distCoeffs);
+	string reason;
+	if (!ok || !valid_projector_distortion(cameraMatrix, distCoeffs, imageSize, reason)) {
+		cout << "Projector distortion fit rejected: " << reason << ". Collect broader, sharper views; RMS alone is insufficient." << endl;
+		return false;
+	}
 
 	totalAvgErr = computeReprojectionErrors(objectPoints, imagePoints,
 		rvecs, tvecs, cameraMatrix, distCoeffs, reprojErrs);

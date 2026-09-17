@@ -18,6 +18,7 @@ namespace Tinker {
 		Mat get_dist_coeffs() { return distCoeffs; }
 		Mat get_camera_matrix() { return cameraMatrix; }
 		Size get_circle_pattern_size() { return circlePatternSize; }
+		Size get_image_size() const { return imageSize; }
 
 		void set_static_candidate_image_points();
 		void set_candidate_image_points(vector<cv::Point2f> pts);
@@ -34,6 +35,7 @@ namespace Tinker {
 		vector<Mat> camBoardTranslations;
 
 		vector<vector<cv::Point2f>> frameMeasuredCircleImagePoints;  // one entry per frame
+		vector<vector<cv::Point2f>> frameMeasuredBoardImagePoints;
 
 		// object points in the world coordinate system
 		vector<vector<cv::Point3f>> objectPoints;

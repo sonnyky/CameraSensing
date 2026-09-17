@@ -124,6 +124,7 @@ Tinker::CalibrationViewSelection Tinker::select_calibration_views(
 		}
 	}
 	result.hasEnoughQualityViews = eligible.size() >= requiredViews;
+	result.eligibleViewCount = eligible.size();
 	if (!result.hasEnoughQualityViews) {
 		return result;
 	}

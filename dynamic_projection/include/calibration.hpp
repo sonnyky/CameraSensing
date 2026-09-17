@@ -1,6 +1,7 @@
 #include "camera_calibration.hpp"
 #include "projector_calibration.hpp"
 #include <cstdint>
+#include "projector_pattern_snapshot.hpp"
 
 namespace Tinker {
 
@@ -35,7 +36,7 @@ namespace Tinker {
 
 		void load(string cameraConfig, string projectorConfig, string extrinsicsConfig);
 		
-		bool add_projected(cv::Mat img, cv::Mat processedImg);
+		bool add_projected(cv::Mat img, cv::Mat& processedImg);
 
 		const cv::Mat & get_cam_to_proj_rotation() { return rotCamToProj; }
 		const cv::Mat & get_cam_to_proj_translation() { return transCamToProj; }
@@ -44,7 +45,8 @@ namespace Tinker {
 		vector<Point2f> get_projected(const vector<Point3f> & pts,
 			const cv::Mat & rotObjToCam,
 			const cv::Mat & transObjToCam);
-		bool set_dynamic_projector_image_points(cv::Mat img, bool offset_from_marker = true);
+		// Both phases use the white-panel layout; only tracking smooths updates.
+		bool set_dynamic_projector_image_points(cv::Mat img, bool immediate_update = true);
 		bool is_dynamic_projector_calibration_satisfied() const;
 		void reset_dynamic_projection_priming();
 		bool is_dynamic_projection_primed() const;
@@ -56,17 +58,25 @@ namespace Tinker {
 		void draw_camera_debug(Mat& image);
 
 		void draw_projector_pattern(Mat& projectorImage);
+		void record_displayed_projector_pattern(bool hasPattern);
 
 		Mat process_image_for_circle_detection(Mat img);
 
 		bool calibrate_projector(Mat img);
 
-		void stereo_calibrate();
+		bool stereo_calibrate();
 		void save_stereo_calibration() const;
 
 	private:
 
-		bool should_accept_board_sample(const vector<Point2f>& boardPoints) const;
+		bool should_accept_board_sample(const vector<Point2f>& boardPoints, string* rejectionReason = nullptr) const;
+		void report_projector_capture_rejection(const string& reason);
+		void report_projector_projection_issue(const string& reason, bool blanked);
+		string last_projector_projection_issue;
+		bool last_projector_projection_issue_blanked = false;
+		std::chrono::time_point<steady_clock> last_projector_projection_issue_time{};
+		string last_projector_capture_rejection;
+		std::chrono::time_point<steady_clock> last_projector_rejection_time{};
 		void commit_accepted_board_sample(const vector<Point2f>& boardPoints);
 		vector<Point2f> last_accepted_board_points;
 		std::chrono::time_point<steady_clock> last_accepted_sample_time;
@@ -94,5 +104,6 @@ namespace Tinker {
 		cv::Mat smoothed_dynamic_board_trans;
 		double last_dynamic_stereo_rms = std::numeric_limits<double>::infinity();
 		string projector_output_filename;
+		ProjectorPatternSnapshot displayed_projector_pattern;
 	};
 }

@@ -2,6 +2,7 @@
 #include "calibration_view_selection.hpp"
 #include "flags.hpp"
 #include <algorithm>
+#include <opencv2/objdetect/aruco_detector.hpp>
 
 Tinker::camera_calibration::camera_calibration()
 {
@@ -16,6 +17,7 @@ Tinker::camera_calibration::~camera_calibration()
 void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, float squareSize_, float aspectRatio_, int nFrames_, int mode_, int cameraId_, std::string outputFileName_)
 {
 	boardSize = boardSize_;
+	orientation_tracker.reset();
 	imageSize = imageSize_;
 	patternLengthInRealUnits = squareSize_;
 	aspectRatio = aspectRatio_;
@@ -156,13 +158,57 @@ bool Tinker::camera_calibration::find_board(Mat img)
 		gray = img;
 	}
 
-	bool foundChessCorners = findChessboardCorners(gray, boardSize, detected_board_points,
+	vector<BoardOrientationMarker> markers;
+	Mat chessGray = gray;
+	if (FLAGS_require_board_orientation) {
+		cv::aruco::DetectorParameters parameters;
+		parameters.minMarkerPerimeterRate = 0.01;
+		parameters.adaptiveThreshWinSizeMax = 53;
+		parameters.cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+		cv::aruco::ArucoDetector detector(cv::aruco::getPredefinedDictionary(FLAGS_board_aruco_dictionary), parameters);
+		vector<int> ids;
+		vector<vector<Point2f>> markerCorners;
+		detector.detectMarkers(gray, markerCorners, ids);
+		const auto isAnchor = [](int id) { return id == FLAGS_board_origin_aruco_id || id == FLAGS_board_origin_secondary_aruco_id; };
+		if (std::none_of(ids.begin(), ids.end(), isAnchor)) {
+			// Retry small codes at a larger sampling scale; this cannot restore
+			// detail lost to blur, but can recover thresholding/contour failures.
+			Mat enlarged;
+			resize(gray, enlarged, Size(), 2, 2, INTER_CUBIC);
+			detector.detectMarkers(enlarged, markerCorners, ids);
+			for (auto& polygon : markerCorners) for (auto& point : polygon) point *= 0.5f;
+		}
+		chessGray = gray.clone();
+		for (size_t index = 0; index < ids.size(); ++index) {
+			if (ids[index] != FLAGS_board_origin_aruco_id && ids[index] != FLAGS_board_origin_secondary_aruco_id) continue;
+			Point2f center;
+			vector<Point> polygon;
+			for (const auto& point : markerCorners[index]) { center += point * 0.25f; polygon.emplace_back(cvRound(point.x), cvRound(point.y)); }
+			markers.push_back({ids[index], center});
+			// These markers are on white squares. Remove their black interiors
+			// from the private chessboard image so they do not bias corner refinement.
+			fillConvexPoly(chessGray, polygon, Scalar(255));
+		}
+	}
+	bool foundChessCorners = findChessboardCorners(chessGray, boardSize, detected_board_points,
 		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE);
 
 	if (foundChessCorners) {
-		cornerSubPix(gray, detected_board_points, Size(11, 11),
+		cornerSubPix(chessGray, detected_board_points, Size(11, 11),
 			Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+		if (FLAGS_require_board_orientation) {
+			foundChessCorners = orientation_tracker.orient(detected_board_points, boardSize, markers, orientation_status);
+		}
+		else orientation_status = "origin anchoring disabled";
 	}
+	else {
+		orientation_tracker.reset();
+		orientation_status = "complete chessboard missing; readable anchor markers=" + std::to_string(markers.size()) +
+			"; keep all 9x6 inner corners visible";
+	}
+	if (!foundChessCorners && FLAGS_require_board_orientation && markers.empty() && !detected_board_points.empty())
+		orientation_status += "; no readable anchor IDs (check marker size, blur and dictionary)";
+	if (!foundChessCorners) detected_board_points.clear();
 
 	return foundChessCorners;
 }
@@ -182,46 +228,29 @@ void Tinker::camera_calibration::compute_candidate_board_pose(const vector<cv::P
 
 bool Tinker::camera_calibration::back_project(const Mat & boardRot64, const Mat & boardTrans64, const vector<Point2f>& imgPt, vector<Point3f>& worldPt)
 {
-	if (imgPt.size() == 0) {
-		return false;
+	if (imgPt.empty() || cameraMatrix.empty() || !checkRange(boardRot64) || !checkRange(boardTrans64)) return false;
+	vector<Point2d> observed(imgPt.begin(), imgPt.end()), normalized;
+	// Remove lens distortion BEFORE intersecting camera rays with the board plane.
+	undistortPoints(observed, normalized, cameraMatrix, distCoeffs);
+	Mat rotation, translation, rotationVector;
+	boardRot64.convertTo(rotationVector, CV_64F);
+	boardTrans64.convertTo(translation, CV_64F);
+	Rodrigues(rotationVector, rotation);
+	Mat inverseRotation = rotation.t();
+	Mat cameraOriginInBoard = inverseRotation * translation;
+	vector<Point3f> reconstructed;
+	for (const auto& point : normalized) {
+		Mat ray = (Mat_<double>(3, 1) << point.x, point.y, 1.0);
+		Mat boardRay = inverseRotation * ray;
+		const double denominator = boardRay.at<double>(2);
+		if (!std::isfinite(denominator) || std::abs(denominator) < 1e-10) return false;
+		const double scale = cameraOriginInBoard.at<double>(2) / denominator;
+		Mat boardPoint = scale * boardRay - cameraOriginInBoard;
+		if (!std::isfinite(scale) || scale <= 0 || !checkRange(boardPoint)) return false;
+		reconstructed.emplace_back(static_cast<float>(boardPoint.at<double>(0)),
+			static_cast<float>(boardPoint.at<double>(1)), 0.0f);
 	}
-	else
-	{
-		Mat imgPt_h = Mat::zeros(3, imgPt.size(), CV_32F);
-		for (int h = 0; h < imgPt.size(); ++h) {
-			imgPt_h.at<float>(0, h) = imgPt[h].x;
-			imgPt_h.at<float>(1, h) = imgPt[h].y;
-			imgPt_h.at<float>(2, h) = 1.0f;
-		}
-		Mat Kinv64 = cameraMatrix.inv();
-		Mat Kinv, boardRot, boardTrans;
-		Kinv64.convertTo(Kinv, CV_32F);
-		boardRot64.convertTo(boardRot, CV_32F);
-		boardTrans64.convertTo(boardTrans, CV_32F);
-
-		// Transform all image points to world points in camera reference frame
-		// and then into the plane reference frame
-		Mat worldImgPt = Mat::zeros(3, imgPt.size(), CV_32F);
-		Mat rot3x3;
-		Rodrigues(boardRot, rot3x3);
-
-		Mat transPlaneToCam = rot3x3.inv()*boardTrans;
-
-		for (int i = 0; i < imgPt.size(); ++i) {
-			Mat col = imgPt_h.col(i);
-			Mat worldPtcam = Kinv * col;
-			Mat worldPtPlane = rot3x3.inv()*(worldPtcam);
-
-			float scale = transPlaneToCam.at<float>(2) / worldPtPlane.at<float>(2);
-			Mat worldPtPlaneReproject = scale * worldPtPlane - transPlaneToCam;
-
-			Point3f pt;
-			pt.x = worldPtPlaneReproject.at<float>(0);
-			pt.y = worldPtPlaneReproject.at<float>(1);
-			pt.z = 0;
-			worldPt.push_back(pt);
-		}
-	}
+	worldPt.insert(worldPt.end(), reconstructed.begin(), reconstructed.end());
 	return true;
 }
 
