@@ -2,6 +2,7 @@
 #include "projector_calibration.hpp"
 #include <cstdint>
 #include "projector_pattern_snapshot.hpp"
+#include "projection_rejection_debug.hpp"
 
 namespace Tinker {
 
@@ -42,7 +43,7 @@ namespace Tinker {
 		const cv::Mat & get_cam_to_proj_translation() { return transCamToProj; }
 		void loadExtrinsics(string filename, bool absolute = false);
 
-		vector<Point2f> get_projected(const vector<Point3f> & pts,
+		ProjectionResult get_projected(const vector<Point3f> & pts,
 			const cv::Mat & rotObjToCam,
 			const cv::Mat & transObjToCam);
 		// Both phases use the white-panel layout; only tracking smooths updates.
@@ -71,9 +72,10 @@ namespace Tinker {
 
 		bool should_accept_board_sample(const vector<Point2f>& boardPoints, string* rejectionReason = nullptr) const;
 		void report_projector_capture_rejection(const string& reason);
-		void report_projector_projection_issue(const string& reason, bool blanked);
+		void report_projector_projection_issue(const string& reason, bool blanked, const string& category = "");
 		string last_projector_projection_issue;
 		bool last_projector_projection_issue_blanked = false;
+		string last_projector_projection_issue_category;
 		std::chrono::time_point<steady_clock> last_projector_projection_issue_time{};
 		string last_projector_capture_rejection;
 		std::chrono::time_point<steady_clock> last_projector_rejection_time{};

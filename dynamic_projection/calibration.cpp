@@ -152,16 +152,18 @@ void Tinker::calibration::commit_accepted_board_sample(const vector<Point2f>& bo
 	has_accepted_board_sample = true;
 }
 
-void Tinker::calibration::report_projector_projection_issue(const string& reason, bool blanked)
+void Tinker::calibration::report_projector_projection_issue(const string& reason, bool blanked, const string& category)
 {
 	const auto now = steady_clock::now();
 	if (last_projector_projection_issue.empty() || blanked != last_projector_projection_issue_blanked ||
+		category != last_projector_projection_issue_category ||
 		now - last_projector_projection_issue_time >= std::chrono::seconds(2)) {
 		cout << (blanked ? "Projector projection blanked: " : "Projector projection bounds warning: ") << reason << endl;
 		last_projector_projection_issue_time = now;
 	}
 	last_projector_projection_issue = reason;
 	last_projector_projection_issue_blanked = blanked;
+	last_projector_projection_issue_category = category;
 }
 
 void Tinker::calibration::reset_sample_capture_gate()
@@ -179,8 +181,11 @@ void Tinker::calibration::loadExtrinsics(string filename, bool absolute)
 }
 
 // obtains points in the projector image coordinates that correspond to points in real world coordinates. This can be used as a measure of accuracy of projected points?
-vector<Point2f> Tinker::calibration::get_projected(const vector<Point3f>& pts, const cv::Mat & rotObjToCam, const cv::Mat & transObjToCam)
+Tinker::ProjectionResult Tinker::calibration::get_projected(const vector<Point3f>& pts, const cv::Mat & rotObjToCam, const cv::Mat & transObjToCam)
 {
+	ProjectionResult result;
+	result.circles.resize(pts.size());
+	if (pts.empty()) { result.rejectionReason="empty_grid"; return result; }
 	cv::Mat rotObjToProj, transObjToProj;
 
 	cv::composeRT(rotObjToCam, transObjToCam,
@@ -195,15 +200,28 @@ vector<Point2f> Tinker::calibration::get_projected(const vector<Point3f>& pts, c
 		validatedRadius=std::max(validatedRadius,std::hypot((x-intrinsics.at<double>(0,2))/intrinsics.at<double>(0,0),
 			(y-intrinsics.at<double>(1,2))/intrinsics.at<double>(1,1)));
 	validatedRadius *= 1.25;
-	for (const auto& point : pts) {
+	result.allowedRadius=validatedRadius;
+	for (size_t index=0;index<pts.size();++index) {
+		const auto& point=pts[index];
 		const double depth = rotation.at<double>(2,0)*point.x + rotation.at<double>(2,1)*point.y +
 			rotation.at<double>(2,2)*point.z + transObjToProj.at<double>(2);
-		if (!std::isfinite(depth) || depth <= 1e-6) return {};
 		const double x=rotation.at<double>(0,0)*point.x+rotation.at<double>(0,1)*point.y+
 			rotation.at<double>(0,2)*point.z+transObjToProj.at<double>(0);
 		const double y=rotation.at<double>(1,0)*point.x+rotation.at<double>(1,1)*point.y+
 			rotation.at<double>(1,2)*point.z+transObjToProj.at<double>(1);
-		if (!std::isfinite(x) || !std::isfinite(y) || std::hypot(x/depth,y/depth)>validatedRadius) return {};
+		auto& debug=result.circles[index];
+		debug.projectorMm={x,y,depth};
+		result.offendingCircle=index;
+		if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(depth)) {
+			result.rejectionReason="non_finite_projector_coordinates"; return result;
+		}
+		if (depth <= 1e-6) {
+			result.rejectionReason=depth<=0 ? "non_positive_depth" : "depth_below_minimum"; return result;
+		}
+		debug.normalizedRadius=std::hypot(x/depth,y/depth);
+		if (debug.normalizedRadius>validatedRadius) {
+			result.rejectionReason="outside_distortion_domain"; return result;
+		}
 	}
 
 	vector<Point2f> out;
@@ -212,7 +230,14 @@ vector<Point2f> Tinker::calibration::get_projected(const vector<Point3f>& pts, c
 		projector_calibrator.get_camera_matrix(),
 		projector_calibrator.get_dist_coeffs(),
 		out);
-	return out;
+	result.points=std::move(out);
+	for (size_t index=0;index<result.points.size();++index) {
+		if (!std::isfinite(result.points[index].x) || !std::isfinite(result.points[index].y)) {
+			result.rejectionReason="non_finite_pixel_projection"; result.offendingCircle=index; return result;
+		}
+	}
+	if (result.points.empty()) result.rejectionReason="empty_grid";
+	return result;
 }
 
 bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img, bool immediate_update)
@@ -289,22 +314,34 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img, bool i
 			}
 		}
 
-		vector<Point2f> followingPatternImagePoints = get_projected(
+		const auto projectionResult = get_projected(
 			auxObjectPoints,
 			smoothed_dynamic_board_rot,
 			smoothed_dynamic_board_trans);
+		const auto& followingPatternImagePoints=projectionResult.points;
 		const auto desiredBounds = projector_projection_bounds(followingPatternImagePoints,
 			projector_calibrator.get_image_size(), static_cast<double>(FLAGS_projected_circle_radius));
-		if (followingPatternImagePoints.empty() || desiredBounds.finiteCenters != followingPatternImagePoints.size()) {
-			report_projector_projection_issue("computed grid is behind the projector, beyond the validated distortion domain, or non-finite; check board pose and calibration", true);
+		if (!projectionResult.rejectionReason.empty()) {
+			report_projector_projection_issue(projection_circle_debug(projectionResult,projectionResult.offendingCircle,
+				projector_calibrator.get_circle_pattern_size(),projectionResult.rejectionReason),true,projectionResult.rejectionReason);
 			return false;
+		}
+		string clippingDebug;
+		for (size_t index=0;index<followingPatternImagePoints.size();++index) {
+			const auto edges=clipped_circle_edges(followingPatternImagePoints[index],projector_calibrator.get_image_size(),
+				static_cast<double>(FLAGS_projected_circle_radius));
+			if (!edges.empty()) {
+				clippingDebug=projection_circle_debug(projectionResult,index,projector_calibrator.get_circle_pattern_size(),"screen_clipping")+
+					"; clipped_edges="+edges+"; circle_radius_px="+std::to_string(FLAGS_projected_circle_radius);
+				break;
+			}
 		}
 		// Calibration requires a complete detectable grid. Tracking accumulates
 		// no samples and may render the visible portion of a valid projection.
 		if (immediate_update && desiredBounds.fullyVisibleCircles != followingPatternImagePoints.size()) {
 			report_projector_projection_issue("complete grid does not fit the projector image (full circles=" +
 				std::to_string(desiredBounds.fullyVisibleCircles) + "/" + std::to_string(followingPatternImagePoints.size()) +
-				"); move the board into coverage; coordinates are not clamped", true);
+				"); " + clippingDebug + "; coordinates are not clamped", true,"screen_clipping");
 			return false;
 		}
 		// Project every circle from one shared pose; no independent point
@@ -323,8 +360,8 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img, bool i
 				<< displayedBounds.fullyVisibleCircles << "/" << displayedPoints.size()
 				<< ", intersecting circle bounds=" << displayedBounds.intersectingCircles
 				<< "; projector image=" << projector_calibrator.get_image_size().width << "x" << projector_calibrator.get_image_size().height
-				<< ". Coordinates are not clamped; check board pose, placement and calibration.";
-			report_projector_projection_issue(message.str(), false);
+				<< "; " << clippingDebug << ". Coordinates are not clamped; check board pose, placement and calibration.";
+			report_projector_projection_issue(message.str(), false,"screen_clipping");
 		}
 		else {
 			last_projector_projection_issue.clear();

@@ -342,6 +342,36 @@ int main(int argc, char** argv)
 		};
 		Tinker::calibration movingProjection, freshProjection;
 		configureProjection(movingProjection); configureProjection(freshProjection);
+		const cv::Mat zeroRotation=cv::Mat::zeros(3,1,CV_64F);
+		const cv::Mat diagnosticTranslation=(cv::Mat_<double>(3,1) << 0,0,1000);
+		const auto emptyProjection=movingProjection.get_projected({},zeroRotation,diagnosticTranslation);
+		require(emptyProjection.rejectionReason=="empty_grid" &&
+			Tinker::projection_circle_debug(emptyProjection,0,{4,5},"empty_grid").find("circle=N/A")!=std::string::npos,
+			"Empty-grid diagnostics reported a nonexistent circle");
+		std::vector<cv::Point3f> diagnosticGrid(20,cv::Point3f(0,0,0));
+		diagnosticGrid[17]={3000,0,0};
+		auto diagnosticResult=movingProjection.get_projected(diagnosticGrid,zeroRotation,diagnosticTranslation);
+		require(diagnosticResult.rejectionReason=="outside_distortion_domain" && diagnosticResult.offendingCircle==17 &&
+			diagnosticResult.points.empty() && diagnosticResult.circles[17].projectorMm.z==1000 &&
+			diagnosticResult.circles[17].normalizedRadius==3 && diagnosticResult.allowedRadius<3,
+			"Domain rejection lost its exact reason, circle, depth or radius");
+		const auto diagnosticText=Tinker::projection_circle_debug(diagnosticResult,17,{4,5},diagnosticResult.rejectionReason);
+		require(diagnosticText.find("circle=18/20")!=std::string::npos && diagnosticText.find("row=5; column=2")!=std::string::npos &&
+			diagnosticText.find("depth_mm=1000.0000")!=std::string::npos && diagnosticText.find("normalized_radius=3.0000")!=std::string::npos,
+			"Projection rejection message has incorrect indexing or measurements");
+		diagnosticGrid[17]={0,0,0};
+		const cv::Mat tinyDepth=(cv::Mat_<double>(3,1) << 0,0,0.0000001);
+		require(movingProjection.get_projected(diagnosticGrid,zeroRotation,tinyDepth).rejectionReason=="depth_below_minimum",
+			"Positive depth below the existing threshold was misclassified");
+		const cv::Mat behindTranslation=(cv::Mat_<double>(3,1) << 0,0,-1000);
+		diagnosticResult=movingProjection.get_projected(diagnosticGrid,zeroRotation,behindTranslation);
+		require(diagnosticResult.rejectionReason=="non_positive_depth" && diagnosticResult.circles[0].projectorMm.z==-1000 &&
+			Tinker::projection_circle_debug(diagnosticResult,0,{4,5},diagnosticResult.rejectionReason).find("normalized_radius=N/A")!=std::string::npos,
+			"Behind-projector rejection reported a radius or wrong depth");
+		diagnosticGrid[0].x=std::numeric_limits<float>::quiet_NaN();
+		diagnosticResult=movingProjection.get_projected(diagnosticGrid,zeroRotation,diagnosticTranslation);
+		require(diagnosticResult.rejectionReason=="non_finite_projector_coordinates", "Non-finite rejection was misclassified");
+		require(Tinker::clipped_circle_edges({5,1075},{1920,1080},10)=="left,bottom", "Clipped edge diagnostics are incorrect");
 		cv::Mat shiftedBoard;
 		const cv::Mat shift=(cv::Mat_<double>(2,3) << 1,0,100,0,1,0);
 		cv::warpAffine(markedBoard,shiftedBoard,shift,markedBoard.size(),cv::INTER_NEAREST,cv::BORDER_CONSTANT,cv::Scalar(255));
@@ -359,8 +389,17 @@ int main(int argc, char** argv)
 		require(cv::norm(movingImage,freshImage,cv::NORM_INF)==0, "Tracking changed region or independently capped circle movement");
 		const cv::Mat downwardShift=(cv::Mat_<double>(2,3) << 1,0,0,0,1,150);
 		cv::warpAffine(markedBoard,shiftedBoard,downwardShift,markedBoard.size(),cv::INTER_NEAREST,cv::BORDER_CONSTANT,cv::Scalar(255));
-		require(!movingProjection.set_dynamic_projector_image_points(shiftedBoard,true), "Clipped dynamic grid was displayed");
-		require(movingProjection.set_dynamic_projector_image_points(shiftedBoard,false), "Partial tracking grid was unnecessarily blanked");
+		std::ostringstream clippingMessages;
+		auto* oldOutput=std::cout.rdbuf(clippingMessages.rdbuf());
+		const bool clippedCalibrationAccepted=movingProjection.set_dynamic_projector_image_points(shiftedBoard,true);
+		const bool clippedTrackingAccepted=movingProjection.set_dynamic_projector_image_points(shiftedBoard,false);
+		std::cout.rdbuf(oldOutput);
+		require(!clippedCalibrationAccepted, "Clipped dynamic grid was displayed");
+		require(clippedTrackingAccepted, "Partial tracking grid was unnecessarily blanked");
+		require(clippingMessages.str().find("reason=screen_clipping")!=std::string::npos &&
+			clippingMessages.str().find("pixel_center=")!=std::string::npos && clippingMessages.str().find("clipped_edges=bottom")!=std::string::npos &&
+			clippingMessages.str().find("Projector projection bounds warning:")!=std::string::npos,
+			"Clipping diagnostics or immediate blank-to-warning transition are missing");
 		movingProjection.draw_projector_pattern(movingImage);
 		require(cv::countNonZero(movingImage)>0, "Partial tracking grid rendered no visible circles");
 		require(!movingProjection.set_dynamic_projector_image_points(cv::Mat::zeros(markedBoard.size(),CV_8UC1),false),

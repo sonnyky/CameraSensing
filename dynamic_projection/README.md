@@ -290,6 +290,20 @@ Dynamic calibration uses the current measured board pose directly, with no pose 
 
 `Projector projection blanked:` identifies missing chessboard detection, missing/invalid calibration parameters, invalid depth, or projection beyond the validated distortion domain. Dynamic calibration additionally blanks a grid whose complete circles do not fit within the projector image, because samples require all 20 points. Tracking allows partial visibility: visible circles are rendered, circles crossing an image edge are clipped by rendering, and wholly off-image circles are skipped. `Projector projection bounds warning:` reports full-circle counts, coordinate ranges and intersecting circle bounds without blanking an otherwise valid tracking projection. Coordinates are not clamped or moved to the boundary, and tracking accumulates no calibration samples. If all circles are off-image, no circles can be displayed. Moving farther can still reach the distortion-domain or depth guards and blank tracking for safety. A grid inside the projector image can still miss the physical board: these diagnostics do not measure panel edges. Messages are throttled separately from sample-capture warnings.
 
+### Projection rejection diagnostics
+
+Projection failures now report an exact reason instead of combining depth, distortion-domain and non-finite failures. The first offending circle is identified using 1-based circle number, row and column in the 4x5 asymmetric grid. The message includes its projector-space XYZ and depth in millimeters, normalized radius `hypot(X/Z,Y/Z)`, and allowed distortion-domain radius. Radius is `N/A` when it cannot safely be evaluated, such as non-positive depth. Depths at or below 0.000001 mm remain rejected; this threshold is unchanged.
+
+Reasons are `non_finite_projector_coordinates`, `non_positive_depth`, `depth_below_minimum`, `outside_distortion_domain`, `non_finite_pixel_projection`, or `empty_grid`. Ordinary clipping uses `screen_clipping`, adding the pixel center, circle radius and crossed screen edges. Only the first offending circle is reported; it need not be the circle with the largest error. Tracking clipping remains a warning, while dynamic-calibration clipping blanks the grid. Repeated messages are throttled to approximately one every two seconds; a changed failure category or blanking/warning transition is reported immediately even within that interval.
+
+Illustrative output (not measurements from your device):
+
+```text
+Projector projection blanked: reason=outside_distortion_domain; circle=17/20; row=5; column=1; projector_xyz_mm=(-180.2000,245.7000,420.0000); depth_mm=420.0000; normalized_radius=0.7255; allowed_radius=0.6100
+```
+
+These diagnostics do not alter calibration fitting, circle placement, acceptance thresholds or visibility policy.
+
 ### Projector distortion validity
 
 Projector intrinsics now fit `k1`, `k2` and tangential distortion while fixing `k3` to zero (`CALIB_FIX_K3`). This reduces poorly constrained sixth-order distortion from the fixed static-grid footprint; it is not a guarantee of accuracy. Camera fitting is unchanged. Existing RMS and viewpoint-coverage limits still apply. Calibration results can change, and a fresh calibration is required after rebuilding.
