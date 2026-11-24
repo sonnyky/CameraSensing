@@ -5,11 +5,32 @@
 #include <filesystem>
 #include <stdexcept>
 #include <cmath>
+#include <vector>
 #include <windows.h>
 #include <state.hpp>
 #include <flags.hpp>
 #include "capture.hpp"
 #include "calibration.hpp"
+#include "display_selection.hpp"
+
+namespace {
+struct WindowsDisplay {
+	Tinker::DisplayGeometry geometry;
+	std::wstring device;
+};
+
+BOOL CALLBACK collect_display(HMONITOR monitor, HDC, LPRECT, LPARAM data)
+{
+	auto& displays=*reinterpret_cast<std::vector<WindowsDisplay>*>(data);
+	MONITORINFOEXW info{};
+	info.cbSize=sizeof(info);
+	if (!GetMonitorInfoW(monitor,&info)) return TRUE;
+	displays.push_back({{info.rcMonitor.left,info.rcMonitor.top,
+		info.rcMonitor.right-info.rcMonitor.left,info.rcMonitor.bottom-info.rcMonitor.top,
+		(info.dwFlags & MONITORINFOF_PRIMARY)!=0},info.szDevice});
+	return TRUE;
+}
+}
 
 bool fexists(const std::string& filename) {
 	std::ifstream ifile(filename.c_str());
@@ -52,6 +73,12 @@ bool ParseAndCheckCommandLine(int argc, char* argv[]) {
 	if (!std::isfinite(FLAGS_board_square_size_cm) || FLAGS_board_square_size_cm <= 0.0) {
 		throw std::invalid_argument("--board_square_size_cm must be a finite positive length in centimeters.");
 	}
+	if (FLAGS_projector_display_index < -1) {
+		throw std::invalid_argument("--projector_display_index must be -1 or nonnegative.");
+	}
+	if (FLAGS_camera_width == 0 || FLAGS_camera_height == 0 || FLAGS_camera_width > 16384 || FLAGS_camera_height > 16384) {
+		throw std::invalid_argument("Camera width and height must be within 1..16384 pixels.");
+	}
 	if (!std::isfinite(FLAGS_static_projector_spacing_px) || FLAGS_static_projector_spacing_px <= 0.0 ||
 		!std::isfinite(FLAGS_static_projector_center_x) || FLAGS_static_projector_center_x < 0.0 || FLAGS_static_projector_center_x > 1.0 ||
 		!std::isfinite(FLAGS_static_projector_center_y) || FLAGS_static_projector_center_y < 0.0 || FLAGS_static_projector_center_y > 1.0 ||
@@ -67,16 +94,13 @@ bool ParseAndCheckCommandLine(int argc, char* argv[]) {
 
 	std::cout << "Parsing input parameters" << std::endl;
 	if (FLAGS_board_aruco_dictionary < 0 || FLAGS_board_aruco_dictionary > 21 ||
-		FLAGS_board_origin_aruco_id < 0 || FLAGS_board_origin_secondary_aruco_id < 0 ||
-		FLAGS_board_origin_aruco_id == FLAGS_board_origin_secondary_aruco_id) {
-		throw std::invalid_argument("ArUco dictionary must be 0..21 and the two origin IDs must be distinct nonnegative IDs.");
+		FLAGS_board_origin_aruco_id < 0) {
+		throw std::invalid_argument("ArUco dictionary must be 0..21 and the origin ID must be nonnegative.");
 	}
-	for (double value : {FLAGS_board_origin_marker_x_squares, FLAGS_board_origin_marker_y_squares,
-		FLAGS_board_secondary_marker_x_squares, FLAGS_board_secondary_marker_y_squares,
-		FLAGS_projection_region_top_cm, FLAGS_projection_region_center_x_cm}) {
-		if (!std::isfinite(value)) throw std::invalid_argument("Marker locations and projection region offsets must be finite.");
+	for (double value : {FLAGS_projection_region_top_cm, FLAGS_projection_region_center_x_cm}) {
+		if (!std::isfinite(value)) throw std::invalid_argument("Projection region offsets must be finite.");
 	}
-	for (double value : {FLAGS_board_origin_marker_tolerance_squares, FLAGS_board_tracking_max_motion_squares,
+	for (double value : {FLAGS_board_tracking_max_motion_squares,
 		FLAGS_projection_region_width_cm, FLAGS_projection_region_height_cm}) {
 		if (!std::isfinite(value) || value <= 0) throw std::invalid_argument("Orientation tolerances and projection region dimensions must be finite positive values.");
 	}
@@ -115,17 +139,36 @@ int main(int argc, char* argv[])
 	int MODE = 0;
 
 #pragma region opencv window
-	int width_first = 1920;
-	int height_first = 0;
+	SetProcessDPIAware();
+	std::vector<WindowsDisplay> detectedDisplays;
+	if (!EnumDisplayMonitors(nullptr,nullptr,collect_display,reinterpret_cast<LPARAM>(&detectedDisplays))) {
+		std::cerr << "Unable to enumerate Windows displays." << std::endl;
+		return EXIT_FAILURE;
+	}
+	std::vector<Tinker::DisplayGeometry> displayGeometry;
+	for (size_t index=0;index<detectedDisplays.size();++index) {
+		const auto& display=detectedDisplays[index];
+		displayGeometry.push_back(display.geometry);
+		std::wcout << L"Display " << index << L": " << display.device << L" at (" << display.geometry.left << L','
+			<< display.geometry.top << L") " << display.geometry.width << L'x' << display.geometry.height
+			<< (display.geometry.primary ? L" [primary]" : L"") << std::endl;
+	}
+	size_t projectorDisplayIndex=0;
+	try {
+		projectorDisplayIndex=Tinker::select_projector_display(displayGeometry,FLAGS_projector_display_index);
+	} catch (const std::exception& error) {
+		std::cerr << error.what() << std::endl;
+		return EXIT_FAILURE;
+	}
+	const auto projectorDisplay=displayGeometry[projectorDisplayIndex];
+	const int width_second=projectorDisplay.width;
+	const int height_second=projectorDisplay.height;
+	std::cout << "ProjectionWindow target: display " << projectorDisplayIndex << " at (" << projectorDisplay.left << ','
+		<< projectorDisplay.top << ") " << width_second << 'x' << height_second << std::endl;
 
-	// define dimension of the second display
-	int width_second = 1920;
-	int height_second = 1080;
-
-	// move the window to the second display 
-	// (assuming the two displays are top aligned)
-	namedWindow("ProjectionWindow", WND_PROP_FULLSCREEN);
-	moveWindow("ProjectionWindow", width_first, height_first);
+	namedWindow("ProjectionWindow", WINDOW_NORMAL);
+	moveWindow("ProjectionWindow", projectorDisplay.left, projectorDisplay.top);
+	resizeWindow("ProjectionWindow",width_second,height_second);
 	setWindowProperty("ProjectionWindow", WND_PROP_FULLSCREEN, WINDOW_FULLSCREEN);
 	namedWindow("CameraDebug", WINDOW_NORMAL);
 	moveWindow("CameraDebug", 0, 0);
@@ -225,7 +268,7 @@ int main(int argc, char* argv[])
 			}
 		};
 
-		Tinker::capture frame_capture("webcam", 0);
+		Tinker::capture frame_capture("webcam", 0,static_cast<int>(FLAGS_camera_width),static_cast<int>(FLAGS_camera_height));
 		//cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
 
 		capture_state.transition_to<CameraCalibrationState>();
@@ -241,6 +284,9 @@ int main(int argc, char* argv[])
 			cv::Mat first_frame = frame_capture.read();
 			if (!first_frame.empty()) {
 				camera_image_size = first_frame.size();
+				std::cout << "Actual camera frame size: " << camera_image_size.width << 'x' << camera_image_size.height << std::endl;
+				if (camera_image_size.width != FLAGS_camera_width || camera_image_size.height != FLAGS_camera_height)
+					std::cerr << "Warning: camera did not negotiate the requested " << FLAGS_camera_width << 'x' << FLAGS_camera_height << " mode." << std::endl;
 			}
 		}
 
@@ -248,7 +294,7 @@ int main(int argc, char* argv[])
 		const float boardSquareSizeMm = static_cast<float>(FLAGS_board_square_size_cm * 10.0);
 		calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_pattern_width, FLAGS_pattern_height), camera_image_size, boardSquareSizeMm, 1.0, FLAGS_minimum_frames, FLAGS_delay_between_frames, Tinker::DETECTION, 0, cameraOutputFilename);
 
-		calibration_manager.setup_projector_calibration_parameters(Size(1920, 1080), projectorOutputFilename, Size(4,5), static_cast<float>(FLAGS_static_projector_spacing_px), FLAGS_num_boards_before_dynamic_projector_calib, FLAGS_num_boards_final_projector_calib, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 0, 0);
+		calibration_manager.setup_projector_calibration_parameters(Size(width_second, height_second), projectorOutputFilename, Size(4,5), static_cast<float>(FLAGS_static_projector_spacing_px), FLAGS_num_boards_before_dynamic_projector_calib, FLAGS_num_boards_final_projector_calib, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 0, 0);
 		calibration_manager.set_projector_static_image_points();
 #pragma endregion
 

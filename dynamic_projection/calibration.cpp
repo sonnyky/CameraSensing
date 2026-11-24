@@ -12,6 +12,29 @@
 #include "projector_distortion_validation.hpp"
 #include "shared_pose_smoothing.hpp"
 
+namespace {
+void draw_wrapped_status(cv::Mat& image, const std::string& message, const cv::Scalar& color)
+{
+	if (image.empty() || message.empty()) return;
+	const int margin=10, maxWidth=std::max(1,image.cols-2*margin);
+	const double scale=0.5;
+	const int thickness=1, lineHeight=20;
+	std::istringstream words(message);
+	std::string word,line;
+	int baseline=25;
+	auto drawLine=[&]() {
+		if (!line.empty()) cv::putText(image,line,cv::Point(margin,baseline),cv::FONT_HERSHEY_SIMPLEX,scale,color,thickness,cv::LINE_AA);
+		line.clear(); baseline+=lineHeight;
+	};
+	while (words >> word) {
+		const std::string candidate=line.empty() ? word : line+' '+word;
+		if (!line.empty() && cv::getTextSize(candidate,cv::FONT_HERSHEY_SIMPLEX,scale,thickness,nullptr).width>maxWidth) drawLine();
+		line=line.empty() ? word : line+' '+word;
+	}
+	drawLine();
+}
+}
+
 Tinker::calibration::calibration()
 {
 	camera_is_calibrated = false;
@@ -35,16 +58,6 @@ void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, S
 	);
 	minimum_sample_interval = std::chrono::milliseconds(delay_);
 	camera_calibrator.setup_candidate_object_points();
-
-	// check for previous calibration files with the same file name
-	struct stat buffer;
-	bool fileFound = stat(outputFileName_.c_str(), &buffer) == 0;
-	cout << "Camera calibration file exists : " << fileFound << endl;
-	if (fileFound) {
-		camera_is_calibrated = true;
-		FileStorage fs(outputFileName_, FileStorage::READ);
-		fs["camera_matrix"] >> camera_matrix;
-	}
 }
 
 void Tinker::calibration::setup_projector_calibration_parameters(
@@ -293,7 +306,15 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img, bool i
 		// Placement is identical in calibration and tracking. The phase only
 		// controls smoothing, so entering tracking cannot jump onto the marker.
 		{
-			if (FLAGS_use_projection_region) {
+			if (FLAGS_project_grid_inside_checkerboard) {
+				try {
+					pos = centered_checkerboard_grid_origin(camCandObjPts[0], axisX, axisY,
+						camera_calibrator.get_board_size(), projector_calibrator.get_circle_pattern_size());
+				} catch (const std::invalid_argument& error) {
+					report_projector_projection_issue(error.what(), true);
+					return false;
+				}
+			} else if (FLAGS_use_projection_region) {
 				try {
 					pos = centered_projection_grid_origin(camCandObjPts[0], axisX, axisY, projector_calibrator.get_circle_pattern_size(),
 						FLAGS_projection_region_center_x_cm * 10, FLAGS_projection_region_top_cm * 10,
@@ -419,7 +440,7 @@ bool Tinker::calibration::has_dynamic_calibration_solution() const
 void Tinker::calibration::draw_camera_debug(Mat& image)
 {
 	if (!camera_calibrator.find_board(image)) {
-		cv::putText(image, camera_calibrator.get_orientation_status(), Point(10, 25), cv::FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 1);
+		draw_wrapped_status(image,camera_calibrator.get_orientation_status(),Scalar(0,0,255));
 		return;
 	}
 
@@ -427,7 +448,7 @@ void Tinker::calibration::draw_camera_debug(Mat& image)
 	drawChessboardCorners(image, camera_calibrator.get_board_size(), Mat(chessImgPts), true);
 	cv::circle(image, chessImgPts.front(), 7, Scalar(0, 255, 255), 2);
 	cv::putText(image, "origin (0,0)", chessImgPts.front() + Point2f(5, -8), cv::FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 255), 1);
-	cv::putText(image, camera_calibrator.get_orientation_status(), Point(10, 25), cv::FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 255), 1);
+	draw_wrapped_status(image,camera_calibrator.get_orientation_status(),Scalar(0,255,255));
 
 	const cv::Mat cameraMatrix = camera_calibrator.get_camera_matrix();
 	const cv::Mat distCoeffs = camera_calibrator.get_dist_coeffs();
@@ -446,7 +467,26 @@ void Tinker::calibration::draw_camera_debug(Mat& image)
 	}
 
 	cv::drawFrameAxes(image, cameraMatrix, distCoeffs, boardRot, boardTrans, axisLength, 2);
-	if (FLAGS_use_projection_region) {
+	if (FLAGS_project_grid_inside_checkerboard) {
+		const auto& boardObjects = camera_calibrator.get_candidate_object_points();
+		if (boardObjects.size() >= 2) {
+			const Point3f axisX = boardObjects[1] - boardObjects[0];
+			const Point3f axisY = boardObjects[camera_calibrator.get_board_size().width] - boardObjects[0];
+			const Point3f outerTopLeft = boardObjects[0] - axisX - axisY;
+			vector<Point3f> region = {outerTopLeft,
+				outerTopLeft + axisX * static_cast<float>(camera_calibrator.get_board_size().width + 1),
+				outerTopLeft + axisX * static_cast<float>(camera_calibrator.get_board_size().width + 1) + axisY * static_cast<float>(camera_calibrator.get_board_size().height + 1),
+				outerTopLeft + axisY * static_cast<float>(camera_calibrator.get_board_size().height + 1)};
+			vector<Point2f> regionPixels;
+			cv::projectPoints(region, boardRot, boardTrans, cameraMatrix, distCoeffs, regionPixels);
+			for (size_t index = 0; index < regionPixels.size(); ++index) {
+				const auto& a = regionPixels[index]; const auto& b = regionPixels[(index + 1) % regionPixels.size()];
+				if (std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(b.x) && std::isfinite(b.y) &&
+					cv::norm(a) < 1e6 && cv::norm(b) < 1e6) cv::line(image, a, b, Scalar(255, 255, 0), 2);
+			}
+		}
+	}
+	else if (FLAGS_use_projection_region) {
 		const float left = static_cast<float>((FLAGS_projection_region_center_x_cm - FLAGS_projection_region_width_cm / 2) * 10);
 		const float right = left + static_cast<float>(FLAGS_projection_region_width_cm * 10);
 		const float top = static_cast<float>(FLAGS_projection_region_top_cm * 10);

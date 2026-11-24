@@ -13,7 +13,7 @@ The implemented workflow is:
 
 The system uses a printed chessboard as the reference plane and an asymmetric circle grid as the projected pattern.
 
-The default printed marker has **9 × 6 inner corners** and **3.6 cm (36 mm) square side length**. This corresponds to 10 × 7 squares, not 9 × 6 squares. Measure the actual printed square size; paper format alone does not determine calibration scale. Board coordinates and saved translations use millimeters.
+The default printed marker has **9 × 6 inner corners** and **2.0 cm (20 mm) square side length**. This corresponds to 10 × 7 squares, not 9 × 6 squares. Measure the actual printed square size after printing; paper format alone does not determine calibration scale. Board coordinates and saved translations use millimeters.
 
 ## Build and Run (Windows)
 
@@ -49,7 +49,11 @@ Run the Release executable. By default, calibration files are written beside the
 .\build\Release\dynamic_projection.exe
 ```
 
-The application opens `ProjectionWindow` fullscreen on a display positioned to the right of the primary 1920-pixel-wide display. Press `Esc` to exit.
+At startup the application enumerates Windows displays, prints each index, desktop coordinate, resolution and primary status, then opens `ProjectionWindow` fullscreen on the first non-primary display. The projector may be positioned left, right, above or below the primary display and may use a different resolution. Windows must be configured for **Extend these displays**, not Duplicate. Use `--projector_display_index=N` to choose a specific printed index; `-1` retains automatic selection. Press `Esc` to exit.
+
+The camera capture request defaults to **1280×720**. Startup prints both the requested DirectShow mode and the size of the first frame actually received. If the latter is not `1280x720`, close other programs using the camera and override `--camera_width`/`--camera_height` only if the camera requires another supported mode. Chessboard detection runs on the full captured frame.
+
+An existing `camera_params.xml` is loaded only when its saved image size exactly matches the live capture size. An incompatible file is ignored and the program requests a fresh camera calibration. This prevents correct detected corners from being combined with stale intrinsics, which would misplace the reprojected cyan checkerboard boundary and later projector geometry. Changing only the printed square size does not invalidate camera intrinsics, but changing capture resolution, camera mode, focus, zoom or camera hardware requires recalibration.
 
 Both calibration files include their solved intrinsic parameters, per-view reprojection errors, per-view extrinsics, and detected image points. After dynamic calibration succeeds, `projector_params.xml` also includes the final camera-to-projector rotation vector, rotation matrix, translation vector, and stereo RMS error. Set `--calibration_output_dir` to write the files elsewhere.
 
@@ -266,17 +270,19 @@ The dynamic phase ends only when:
 
 ### 5. Tracking
 
-Tracking keeps the projected circles in the same white-panel region used during dynamic calibration. Entering tracking changes smoothing, not the intended physical placement.
+Tracking keeps the projected circles at the same checkerboard-square locations used during dynamic calibration. Entering tracking changes smoothing, not the intended physical placement.
 
-During both dynamic calibration and tracking, the grid is centered inside the configured physical projection region below the chessboard. The default region is approximately 37 cm wide by 29 cm high, with its top edge 25.5 cm below the intended top-left inner corner and its horizontal center at board X=14.4 cm. Board X increases rightward and Y downward on the upright print. The region bounds are X=[-41,329] mm and Y=[255,545] mm. With the unchanged 36 mm asymmetric-grid spacing, circle centers span X=[18,270] mm and Y=[328,472] mm. Allow additional margin for circle radii. These hand-measured dimensions control placement, not calibration scale; square size still defines scale. Static-grid placement, physical scale and RMS limits remain unchanged; distortion-fitting changes are described below. The legacy offset scale applies to both phases only with `--use_projection_region=false`.
+By default, both dynamic calibration and tracking place the complete 4×5 asymmetric grid inside the printed checkerboard boundary. For the 9×6-inner-corner, 20 mm board, circle centers span X=[10,150] mm and Y=[10,90] mm relative to the intended first inner corner. Every center is halfway between adjacent inner-corner coordinates in both axes, so it lands at a square center rather than covering an inner corner. The asymmetric row stagger keeps all 20 centers on the same checker color. Circle radius is still specified in projector pixels, so visually confirm that circles do not grow across inner corners at close range.
 
-### Board origin and projection-region setup
+Set `--project_grid_inside_checkerboard=false` to restore an external placement. In that mode, `--use_projection_region=true` uses the retained 37×29 cm measured region below the checkerboard, while setting both flags false uses the legacy Y-offset formula. Those external defaults are preserved only as fallbacks and do not fit on an A4-only board.
 
-The default orientation anchors use `DICT_6X6_50` (dictionary number 8): ID **0** in the white square above/right of the intended top-left inner corner, and ID **1** in the white square below/left. Their expected centers are respectively (0.5,-0.5) and (-0.5,0.5) square lengths relative to that corner. This matches the glued marker layout decoded from the September 17, 12:46 photo. Larger nested 6x6 dictionaries share these codes, so the original dictionary size cannot be inferred from a photo alone.
+### Board origin and projection placement
 
-At startup, show the entire chessboard and at least one readable anchor marker. Move closer if necessary, without cropping any inner corners. Check the yellow `(0,0)` origin in `CameraDebug` against the intended physical corner. After camera intrinsics are available, a cyan outline shows the configured projection region; verify it matches the white panel. The grid is centered in that region, not at arbitrary image coordinates.
+The default orientation anchor is the single large `DICT_6X6_50` (dictionary number 8) marker with ID **30**, matching the November 24 photo. No marker-to-board measurement or marker print-size setting is required. When the complete chessboard and ID 30 are visible together, the program finds the outer inner checkerboard corner nearest the marker center and assigns that physical corner as `(0,0)`.
 
-The origin is the marked physical corner, not the image's top-left corner. The board may be rotated at initialization or re-acquisition, including 90, 180 and 270 degrees. All four grid-axis directions are evaluated against the marker locations. Once anchored, continuous full-chessboard detections maintain corner ordering even when the small markers are no longer readable. Rotate gradually while markers are unreadable; excessive motion, ambiguous ordering, conflicting markers, or loss of the complete chessboard clears the anchor. Show a readable marker together with the entire chessboard again to resume, in any orientation. This is conservative frame-to-frame ordering continuity, not tracking an invisible or partially occluded board. Small-marker detection retries at double image scale; blur or insufficient source pixels still requires bringing the marker closer. Failure diagnostics distinguish readable anchor count from missing complete chessboard detection. Detected anchor codes are masked white in a private detection image because they are pasted on white squares, reducing interference with chessboard detection and corner refinement. Grid ordering supports axis reversals, but optically mirrored ArUco codes are not decoded by the standard detector; use an unmirrored camera feed.
+At startup, show the entire chessboard and readable ID 30 together. Move closer if necessary, without cropping any inner corners. Keep the marker clearly closer to the intended origin corner than to the other three outer inner corners. Check the yellow `(0,0)` origin in `CameraDebug` against that corner. After camera intrinsics are available, the cyan outline shows the printed checkerboard's outer boundary when inside-checkerboard placement is enabled. With the external fallback enabled, it instead shows the configured physical projection region.
+
+The origin is the marker-nearest physical corner, not the image's top-left corner. The board may be rotated at initialization or re-acquisition, including 90, 180 and 270 degrees. All four grid-axis directions are evaluated and the candidate whose first corner is nearest the marker is selected. An ambiguity guard rejects a marker that is similarly close to multiple board corners. Once anchored, continuous full-chessboard detections maintain corner ordering even when the marker is no longer readable. Rotate gradually while the marker is unreadable; excessive motion, ambiguous ordering, or loss of the complete chessboard clears the anchor. Show readable ID 30 together with the entire chessboard again to resume, in any orientation. This is conservative frame-to-frame ordering continuity, not tracking an invisible or partially occluded board. Marker detection retries at double image scale; blur or insufficient source pixels still requires bringing the marker closer. Failure diagnostics distinguish readable anchor count from missing complete chessboard detection. A detected anchor is masked white in a private detection image if it overlaps the board, reducing interference with corner refinement. Optically mirrored ArUco codes are not decoded by the standard detector; use an unmirrored camera feed.
 
 Region placement does not automatically detect panel edges, resize the grid, mask background blobs, or guarantee that a particular board pose fits inside the projector image. Keep the entire grid on the same rigid plane and within the projector's field of view. `--require_board_orientation=false` permits legacy unanchored chessboard detection, but cannot guarantee the intended physical origin.
 
@@ -310,7 +316,7 @@ Projector intrinsics now fit `k1`, `k2` and tangential distortion while fixing `
 
 Before accepting or loading a projector fit, the code checks finite intrinsics, positive focal lengths, a positive radial scale and a strictly increasing distorted radius. Radial polynomial extrema are evaluated over a disk enclosing the image's pinhole-normalized corners with 25% radial margin. The radial/tangential Jacobian is additionally checked at sampled radii and angles. Fits that fold or reverse this mapping are rejected even when their reprojection RMS passes. The sampled tangential check is a practical guard, not a proof of global invertibility or validation against physical ground truth. Failed fits retain candidate views and do not replace the working intrinsic model; rejected files do not replace a valid loaded model.
 
-Projection beyond this validation disk or behind the projector is rejected instead of extrapolating the distortion polynomial unchecked. This deliberately favors a blank output over unstable or scrambled circles. The physical projection region and marker defaults are unchanged. Do not edit an old XML file merely to set `k3=0`: the remaining parameters were jointly fitted with it and must be recalibrated. OpenCV explains why non-monotonic distortion should be treated as calibration failure in its [calibration documentation](https://docs.opencv.org/4.12.0/d9/d0c/group__calib3d.html).
+Projection beyond this validation disk or behind the projector is rejected instead of extrapolating the distortion polynomial unchecked. This deliberately favors a blank output over unstable or scrambled circles. Marker defaults are unchanged. Do not edit an old XML file merely to set `k3=0`: the remaining parameters were jointly fitted with it and must be recalibrated. OpenCV explains why non-monotonic distortion should be treated as calibration failure in its [calibration documentation](https://docs.opencv.org/4.12.0/d9/d0c/group__calib3d.html).
 
 ## Important Physical Assumption
 
@@ -326,29 +332,27 @@ The application currently supports these command-line parameters from [`include/
 |---|---:|---|
 | `--pattern_width` | `9` | Number of inner corners across the calibration board width |
 | `--pattern_height` | `6` | Number of inner corners across the calibration board height |
-| `--board_square_size_cm` | `3.6` | Printed square side length in centimeters; converted internally to millimeters |
+| `--board_square_size_cm` | `2.0` | Printed square side length in centimeters; converted internally to millimeters |
 | `--num_boards_before_dynamic_projector_calib` | `8` | Number of retained static-projector views required before dynamic calibration |
 | `--num_boards_final_projector_calib` | `5` | Minimum dynamic accepted samples target used for completion |
 | `--minimum_frames` | `8` | Number of retained camera calibration views |
 | `--delay_between_frames` | `1000` | Minimum interval in milliseconds after the first accepted sample in a phase |
 | `--minimum_board_motion_px` | `15.0` | Minimum chessboard-corner RMS movement in pixels after the first accepted sample in a phase |
 | `--calibration_output_dir` | Executable directory | Directory for `camera_params.xml` and `projector_params.xml` |
+| `--projector_display_index` | `-1` | Automatically select the first non-primary display; set a printed startup index to override |
+| `--camera_width` | `1280` | Requested DirectShow camera capture width |
+| `--camera_height` | `720` | Requested DirectShow camera capture height |
 | `--require_board_orientation` | `true` | Require a marker anchor initially and after tracking loss |
 | `--board_aruco_dictionary` | `8` | OpenCV predefined dictionary number; 8 is DICT_6X6_50 |
-| `--board_origin_aruco_id` | `0` | Primary origin marker ID, above/right |
-| `--board_origin_secondary_aruco_id` | `1` | Secondary origin marker ID, below/left |
-| `--board_origin_marker_x_squares` | `0.5` | Primary marker center X in square lengths |
-| `--board_origin_marker_y_squares` | `-0.5` | Primary marker center Y in square lengths |
-| `--board_secondary_marker_x_squares` | `-0.5` | Secondary marker center X in square lengths |
-| `--board_secondary_marker_y_squares` | `0.5` | Secondary marker center Y in square lengths |
-| `--board_origin_marker_tolerance_squares` | `0.6` | Maximum anchor-center matching error in square lengths |
+| `--board_origin_aruco_id` | `30` | Single anchor marker ID; its nearest outer inner corner becomes `(0,0)` |
 | `--board_tracking_max_motion_squares` | `1.5` | Maximum continuity RMS displacement relative to observed horizontal corner spacing |
-| `--use_projection_region` | `true` | Center the dynamic-calibration and tracking grid inside the physical region |
+| `--project_grid_inside_checkerboard` | `true` | Put dynamic-calibration and tracking centers on square centers inside the printed checkerboard boundary |
+| `--use_projection_region` | `true` | When inside placement is disabled, center the grid inside the external physical region |
 | `--projection_region_width_cm` | `37.0` | Projection-region width |
 | `--projection_region_height_cm` | `29.0` | Projection-region height |
 | `--projection_region_top_cm` | `25.5` | Region top edge below the anchored origin |
-| `--projection_region_center_x_cm` | `14.4` | Region horizontal center relative to the anchored origin |
-| `--projector_offset_y_scale` | `0.9` | Legacy dynamic-calibration/tracking board-Y offset; used only when use_projection_region is false |
+| `--projection_region_center_x_cm` | `8.0` | Region horizontal center relative to the anchored origin; centers the default 160 mm inner-corner span |
+| `--projector_offset_y_scale` | `0.9` | Legacy board-Y offset; used only when both placement flags are false |
 | `--projected_circle_radius` | `30` | Radius of each projected circle in projector pixels |
 | `--static_projector_spacing_px` | `120.0` | Static asymmetric-grid spacing in projector pixels |
 | `--static_projector_center_x` | `0.5` | Static grid center as a fraction of projector width |
@@ -381,10 +385,10 @@ From PowerShell, launch calibration with your marker dimensions:
 
 ```powershell
 Set-Location "C:\Users\Sonny\Desktop\Workspace\CameraSensing"
-.\build\Release\dynamic_projection.exe --pattern_width=9 --pattern_height=6 --board_square_size_cm=3.6
+.\build\Release\dynamic_projection.exe --pattern_width=9 --pattern_height=6 --board_square_size_cm=2.0
 ```
 
-These are the defaults, so launching the executable without flags uses the same marker, ArUco IDs, and projection region. Start with a readable ID 1 or 0 and all inner corners visible, then verify the origin overlay before collecting views. The application starts camera calibration, then automatically proceeds through static-projector calibration, dynamic-projector calibration, and tracking. Move the board between accepted samples and vary position, depth, and tilt. With default settings, camera and static-projector selection starts after 12 accepted candidate views each, retaining 8; more candidates may be needed to satisfy quality and coverage checks. Dynamic calibration requires at least 5 accepted samples and the stereo RMS limit. Press `Esc` to exit.
+These are the defaults, so launching the executable without flags uses the same checkerboard, ArUco ID 30, and inside-checkerboard projection placement. Start with readable ID 30 and all inner corners visible, then verify the origin and cyan outer-boundary overlays before collecting views. The application starts camera calibration, then automatically proceeds through static-projector calibration, dynamic-projector calibration, and tracking. Move the board between accepted samples and vary position, depth, and tilt. With default settings, camera and static-projector selection starts after 12 accepted candidate views each, retaining 8; more candidates may be needed to satisfy quality and coverage checks. Dynamic calibration requires at least 5 accepted samples and the stereo RMS limit. Press `Esc` to exit.
 
 Results are written to `build\Release\camera_params.xml` and `build\Release\projector_params.xml`. Final stereo extrinsics are added only after dynamic calibration completes. Use `--calibration_output_dir="C:/path/to/results"` to select another output directory.
 
@@ -394,7 +398,7 @@ Example launch command using the current defaults:
 .\build\Release\dynamic_projection.exe `
   --pattern_width=9 `
   --pattern_height=6 `
-  --board_square_size_cm=3.6 `
+  --board_square_size_cm=2.0 `
   --num_boards_before_dynamic_projector_calib=8 `
   --num_boards_final_projector_calib=5 `
   --minimum_frames=8 `
@@ -416,10 +420,11 @@ Example launch command using the current defaults:
 
 ## Important Notes About Defaults
 
-The marker defaults are 9 × 6 inner corners and 3.6 cm squares; use the marker flags to match a different physical print. The following setup values are still hardcoded in `main.cpp`:
+The checkerboard defaults are 9 × 6 inner corners and 2.0 cm squares; use the board flags to match a different physical print. The following setup values are still hardcoded in `main.cpp`:
 
-- the projector output resolution is currently set to `1920x1080`
 - the projected asymmetric circle pattern size is currently set to `4x5`
+
+The projector resolution is detected from the selected Windows display and used for window creation, calibration bounds and projector intrinsics. Recalibrate if the selected display or its resolution changes.
 
 Do not resize the printed marker without updating `--board_square_size_cm` to its measured square side length.
 
@@ -464,7 +469,7 @@ The app uses:
 - `CameraDebug`: raw webcam image with detected chessboard and board axes overlay
 - `ImageThresholded`: thresholded projector-pattern view with red blob candidates/count after a circle-detection attempt; successful grid and chessboard annotations are added afterward
 
-The debug windows are sized to `640x360`.
+The debug windows are displayed at `640x360`, but this does not downsample the frames used for detection or calibration. Long status messages are wrapped before display so their diagnostic details remain visible.
 
 ## Current Practical Recommendation
 

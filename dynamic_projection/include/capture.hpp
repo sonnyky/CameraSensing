@@ -5,7 +5,7 @@
 namespace Tinker {
     class capture {
     public:
-        capture(const std::string& type, int index);
+        capture(const std::string& type, int index, int requestedWidth, int requestedHeight);
         ~capture();
         cv::Mat read();
 

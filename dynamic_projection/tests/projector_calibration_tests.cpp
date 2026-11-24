@@ -9,6 +9,7 @@
 #include "projection_region_layout.hpp"
 #include "projector_distortion_validation.hpp"
 #include "shared_pose_smoothing.hpp"
+#include "display_selection.hpp"
 #include <opencv2/objdetect/aruco_dictionary.hpp>
 #include <algorithm>
 #include <cmath>
@@ -25,6 +26,15 @@ void require(bool condition, const char* message)
 int main(int argc, char** argv)
 {
     try {
+		const std::vector<Tinker::DisplayGeometry> displays={{0,0,1920,1080,true},{-1280,100,1280,720,false}};
+		require(Tinker::select_projector_display(displays,-1)==1,"Automatic selection did not choose the non-primary display");
+		require(Tinker::select_projector_display(displays,0)==0,"Explicit display selection was ignored");
+		bool displayRejected=false;
+		try { Tinker::select_projector_display(displays,2); } catch (const std::invalid_argument&) { displayRejected=true; }
+		require(displayRejected,"Out-of-range display index was accepted");
+		displayRejected=false;
+		try { Tinker::select_projector_display({displays.front()},-1); } catch (const std::runtime_error&) { displayRejected=true; }
+		require(displayRejected,"Automatic projector selection silently used the only primary display");
 		const cv::Mat modelMatrix = (cv::Mat_<double>(3,3) << 3557.498,0,941.969,0,3533.210,122.675,0,0,1);
 		std::string modelReason;
 		require(Tinker::valid_projector_distortion(modelMatrix, cv::Mat::zeros(5,1,CV_64F), {1920,1080}, modelReason),
@@ -55,14 +65,28 @@ int main(int argc, char** argv)
 		}
 		Tinker::smooth_shared_board_pose(nextRot,nextTrans,1,poseRot,poseTrans);
 		require(cv::norm(poseRot-nextRot)==0 && cv::norm(poseTrans-nextTrans)==0, "Immediate pose update retained smoothing");
-		require(FLAGS_board_origin_aruco_id == 0 && FLAGS_board_origin_secondary_aruco_id == 1,
-			"Default IDs do not match the glued marker layout");
-		const auto regionOrigin = Tinker::centered_projection_grid_origin(cv::Point3f(0, 0, 0), cv::Point3f(36, 0, 0),
-			cv::Point3f(0, 36, 0), cv::Size(4, 5), 144, 255, 370, 290);
-		require(cv::norm(regionOrigin - cv::Point3f(18, 328, 0)) < 0.01, "Configured white-region grid placement incorrect");
+		require(FLAGS_board_origin_aruco_id == 30,
+			"Default ID does not match the single marker shown on the current board");
+		require(FLAGS_pattern_width==9 && FLAGS_pattern_height==6 && std::abs(FLAGS_board_square_size_cm-2.0)<1e-9 &&
+			std::abs(FLAGS_projection_region_center_x_cm-8.0)<1e-9 && FLAGS_project_grid_inside_checkerboard,
+			"Defaults do not match the 9x6, 20 mm checkerboard");
+		require(FLAGS_camera_width==1280 && FLAGS_camera_height==720,
+			"Default camera mode does not match the 1280x720 camera");
+		const auto checkerGridOrigin=Tinker::centered_checkerboard_grid_origin(cv::Point3f(0,0,0),cv::Point3f(20,0,0),
+			cv::Point3f(0,20,0),cv::Size(9,6),cv::Size(4,5));
+		require(cv::norm(checkerGridOrigin-cv::Point3f(10,10,0))<0.01,
+			"4x5 grid was not placed on square centers inside the checkerboard");
+		bool checkerGridRejected=false;
+		try { Tinker::centered_checkerboard_grid_origin(cv::Point3f(0,0,0),cv::Point3f(20,0,0),
+			cv::Point3f(0,20,0),cv::Size(5,4),cv::Size(4,5)); }
+		catch (const std::invalid_argument&) { checkerGridRejected=true; }
+		require(checkerGridRejected,"Oversized grid was accepted inside a smaller checkerboard");
+		const auto regionOrigin = Tinker::centered_projection_grid_origin(cv::Point3f(0, 0, 0), cv::Point3f(20, 0, 0),
+			cv::Point3f(0, 20, 0), cv::Size(4, 5), 80, 255, 370, 290);
+		require(cv::norm(regionOrigin - cv::Point3f(10, 360, 0)) < 0.01, "Configured white-region grid placement incorrect");
 		bool regionRejected = false;
-		try { Tinker::centered_projection_grid_origin(cv::Point3f(0, 0, 0), cv::Point3f(36, 0, 0),
-			cv::Point3f(0, 36, 0), cv::Size(4, 5), 144, 255, 200, 290); }
+		try { Tinker::centered_projection_grid_origin(cv::Point3f(0, 0, 0), cv::Point3f(20, 0, 0),
+			cv::Point3f(0, 20, 0), cv::Size(4, 5), 80, 255, 100, 290); }
 		catch (const std::invalid_argument&) { regionRejected = true; }
 		require(regionRejected, "Oversized grid accepted for small projection region");
 		FLAGS_require_board_orientation = false; // Unmarked legacy image fixtures below.
@@ -80,7 +104,7 @@ int main(int argc, char** argv)
 		}
 		const auto projectionFrame = debugFrame.clone();
 		Tinker::camera_calibration boardDetector;
-		boardDetector.setup_parameters(cv::Size(9, 6), debugFrame.size(), 36, 1, 8, Tinker::DETECTION, 0, "unused.xml");
+		boardDetector.setup_parameters(cv::Size(9, 6), debugFrame.size(), 20, 1, 8, Tinker::DETECTION, 0, "unused.xml");
 		require(boardDetector.find_board(projectionFrame), "Clean synthetic chessboard was not detected");
 		const auto originalProjectionFrame = projectionFrame.clone();
 		cv::drawChessboardCorners(debugFrame, cv::Size(9, 6), boardDetector.get_detected_board_points(), true);
@@ -95,7 +119,7 @@ int main(int argc, char** argv)
 		auto detected = canonical;
 		require(!tracker.orient(detected, cv::Size(9, 6), {}, orientationStatus), "Unanchored board silently accepted");
 		detected = canonical; std::reverse(detected.begin(), detected.end());
-		require(tracker.orient(detected, cv::Size(9, 6), {{0, cv::Point2f(160, 120)}, {1, cv::Point2f(120, 160)}}, orientationStatus) &&
+		require(tracker.orient(detected, cv::Size(9, 6), {{30, cv::Point2f(100, 100)}}, orientationStatus) &&
 			detected == canonical, "Marker anchor did not recover intended top-left origin");
 		for (auto& point : detected) point += cv::Point2f(5, 10);
 		std::reverse(detected.begin(), detected.end());
@@ -105,21 +129,19 @@ int main(int argc, char** argv)
 		require(!tracker.orient(detected, cv::Size(9, 6), {}, orientationStatus), "Large unmarked jump was guessed");
 		detected = canonical;
 		require(!tracker.orient(detected, cv::Size(9, 6), {}, orientationStatus), "Ambiguity did not require reinitialization");
-		require(tracker.orient(detected, cv::Size(9, 6), {{1, cv::Point2f(120, 160)}}, orientationStatus), "Single secondary marker could not reanchor");
+		require(tracker.orient(detected, cv::Size(9, 6), {{30, cv::Point2f(100, 100)}}, orientationStatus), "Single marker could not reanchor");
 		tracker.reset();
 		require(!tracker.orient(detected, cv::Size(9, 6), {}, orientationStatus), "Tracking reset retained stale origin");
-		require(!tracker.orient(detected, cv::Size(9, 6), {{0, cv::Point2f(160, 120)}, {1, cv::Point2f(500, 300)}}, orientationStatus),
-			"Conflicting marker layout was accepted");
+		require(!tracker.orient(detected, cv::Size(9, 6), {{1, cv::Point2f(100, 100)}}, orientationStatus),
+			"An unconfigured marker ID initialized the origin");
 
 		cv::Mat markedBoard = projectionFrame.clone();
 		const auto dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_50);
 		cv::Mat marker;
-		dictionary.generateImageMarker(0, 16, marker);
-		marker.copyTo(markedBoard(cv::Rect(152, 112, 16, 16)));
-		dictionary.generateImageMarker(1, 16, marker);
-		marker.copyTo(markedBoard(cv::Rect(112, 152, 16, 16)));
+		dictionary.generateImageMarker(30, 32, marker);
+		marker.copyTo(markedBoard(cv::Rect(52, 52, 32, 32)));
 		FLAGS_require_board_orientation = true;
-		boardDetector.setup_parameters(cv::Size(9, 6), markedBoard.size(), 36, 1, 8, Tinker::DETECTION, 0, "unused.xml");
+		boardDetector.setup_parameters(cv::Size(9, 6), markedBoard.size(), 20, 1, 8, Tinker::DETECTION, 0, "unused.xml");
 		require(boardDetector.find_board(markedBoard), "Actual ArUco/chessboard anchoring failed");
 		require(cv::norm(boardDetector.get_detected_board_points().front() - cv::Point2f(139.5f, 139.5f)) < 1,
 			"Marked board selected wrong physical origin");
@@ -151,15 +173,23 @@ int main(int argc, char** argv)
 			for (int y = 0; y < 6; ++y) for (int x = 0; x < 9; ++x)
 				detected[y * 9 + x] = canonical[((flip & 2) ? 5-y : y) * 9 + ((flip & 1) ? 8-x : x)];
 			tracker.reset();
-			require(tracker.orient(detected, {9, 6}, {{0, {160, 120}}, {1, {120, 160}}}, orientationStatus) && detected == canonical,
+			require(tracker.orient(detected, {9, 6}, {{30, {100, 100}}}, orientationStatus) && detected == canonical,
 				"Grid-axis reversal changed the physical origin");
 		}
 		if (argc == 2) {
 			const auto photo = cv::imread(argv[1]);
-			boardDetector.setup_parameters(cv::Size(9, 6), photo.size(), 36, 1, 8, Tinker::DETECTION, 0, "unused.xml");
+			boardDetector.setup_parameters(cv::Size(9, 6), photo.size(), 20, 1, 8, Tinker::DETECTION, 0, "unused.xml");
 			const bool foundPhoto = boardDetector.find_board(photo);
 			std::cout << "Photo origin detection=" << foundPhoto << "; " << boardDetector.get_orientation_status() << '\n';
 			if (foundPhoto) std::cout << "Photo canonical origin=" << boardDetector.get_detected_board_points().front() << '\n';
+			cv::Mat photoGray;
+			cv::cvtColor(photo,photoGray,cv::COLOR_BGR2GRAY);
+			for (int height=4;height<=7;++height) for (int width=8;width<=11;++width) {
+				std::vector<cv::Point2f> diagnosticCorners;
+				if (cv::findChessboardCornersSB(photoGray,{width,height},diagnosticCorners,
+					cv::CALIB_CB_NORMALIZE_IMAGE|cv::CALIB_CB_EXHAUSTIVE|cv::CALIB_CB_ACCURACY))
+					std::cout << "Photo sector detector matched " << width << 'x' << height << " inner corners\n";
+			}
 		}
         Tinker::projector_calibration projector;
         auto setup = [&projector](float spacing) {
@@ -285,11 +315,22 @@ int main(int argc, char** argv)
 
         const auto cameraFile = output.string() + ".camera.xml";
         RemoveOutput cleanupCamera{cameraFile};
+		const auto staleCameraFile=output.string()+".stale-camera.xml";
+		RemoveOutput cleanupStaleCamera{staleCameraFile};
         const cv::Mat intrinsics = (cv::Mat_<double>(3, 3) << 700, 0, 480, 0, 710, 270, 0, 0, 1);
         const cv::Mat distortion = (cv::Mat_<double>(5, 1) << -0.15, 0.04, 0.001, -0.001, 0);
+		{
+			cv::FileStorage file(staleCameraFile,cv::FileStorage::WRITE);
+			file << "image_width" << 640 << "image_height" << 480
+				<< "camera_matrix" << intrinsics << "distortion_coefficients" << distortion;
+		}
+		Tinker::camera_calibration incompatibleCamera;
+		incompatibleCamera.setup_parameters({9,6},{1280,720},20,1,8,Tinker::DETECTION,0,staleCameraFile);
+		require(incompatibleCamera.get_camera_matrix().empty(),"Mismatched-resolution camera calibration was loaded");
         {
             cv::FileStorage file(cameraFile, cv::FileStorage::WRITE);
-            file << "camera_matrix" << intrinsics << "distortion_coefficients" << distortion;
+			file << "image_width" << 960 << "image_height" << 540
+				<< "camera_matrix" << intrinsics << "distortion_coefficients" << distortion;
         }
         Tinker::camera_calibration backProjector;
         backProjector.load_camera_matrix(cameraFile);
@@ -315,7 +356,8 @@ int main(int argc, char** argv)
             "Failed back-projection partially changed output");
         {
             cv::FileStorage file(cameraFile, cv::FileStorage::WRITE);
-            file << "camera_matrix" << intrinsics << "distortion_coefficients" << cv::Mat::zeros(5, 1, CV_64F);
+			file << "image_width" << 960 << "image_height" << 540
+				<< "camera_matrix" << intrinsics << "distortion_coefficients" << cv::Mat::zeros(5, 1, CV_64F);
         }
         backProjector.load_camera_matrix(cameraFile);
         std::vector<cv::Point2f> undistortedMeasurements;
@@ -336,7 +378,7 @@ int main(int argc, char** argv)
 				<< "Translation_Vector" << cv::Mat::zeros(3,1,CV_64F);
 		}
 		auto configureProjection = [&](Tinker::calibration& manager) {
-			manager.setup_camera_calibration_parameters({9,6},markedBoard.size(),36,1,8,1000,Tinker::DETECTION,0,cameraFile);
+			manager.setup_camera_calibration_parameters({9,6},markedBoard.size(),20,1,8,1000,Tinker::DETECTION,0,cameraFile);
 			manager.setup_projector_calibration_parameters({1920,1080},projectionModelFile,{4,5},120,8,5,Tinker::ASYMMETRIC_CIRCLES_GRID,0,0);
 			manager.load(cameraFile,projectionModelFile,projectionModelFile);
 		};
@@ -387,23 +429,25 @@ int main(int argc, char** argv)
 			movingProjection.set_dynamic_projector_image_points(shiftedBoard,false), "Tracking placement fixture failed");
 		movingProjection.draw_projector_pattern(movingImage);
 		require(cv::norm(movingImage,freshImage,cv::NORM_INF)==0, "Tracking changed region or independently capped circle movement");
-		const cv::Mat downwardShift=(cv::Mat_<double>(2,3) << 1,0,0,0,1,150);
-		cv::warpAffine(markedBoard,shiftedBoard,downwardShift,markedBoard.size(),cv::INTER_NEAREST,cv::BORDER_CONSTANT,cv::Scalar(255));
+		// Force circle-edge clipping without moving the complete checkerboard out
+		// of this small synthetic camera frame.
+		FLAGS_projected_circle_radius=500;
 		std::ostringstream clippingMessages;
 		auto* oldOutput=std::cout.rdbuf(clippingMessages.rdbuf());
-		const bool clippedCalibrationAccepted=movingProjection.set_dynamic_projector_image_points(shiftedBoard,true);
-		const bool clippedTrackingAccepted=movingProjection.set_dynamic_projector_image_points(shiftedBoard,false);
+		const bool clippedCalibrationAccepted=movingProjection.set_dynamic_projector_image_points(markedBoard,true);
+		const bool clippedTrackingAccepted=movingProjection.set_dynamic_projector_image_points(markedBoard,false);
 		std::cout.rdbuf(oldOutput);
 		require(!clippedCalibrationAccepted, "Clipped dynamic grid was displayed");
 		require(clippedTrackingAccepted, "Partial tracking grid was unnecessarily blanked");
 		require(clippingMessages.str().find("reason=screen_clipping")!=std::string::npos &&
-			clippingMessages.str().find("pixel_center=")!=std::string::npos && clippingMessages.str().find("clipped_edges=bottom")!=std::string::npos &&
+			clippingMessages.str().find("pixel_center=")!=std::string::npos && clippingMessages.str().find("clipped_edges=")!=std::string::npos &&
 			clippingMessages.str().find("Projector projection bounds warning:")!=std::string::npos,
 			"Clipping diagnostics or immediate blank-to-warning transition are missing");
 		movingProjection.draw_projector_pattern(movingImage);
 		require(cv::countNonZero(movingImage)>0, "Partial tracking grid rendered no visible circles");
 		require(!movingProjection.set_dynamic_projector_image_points(cv::Mat::zeros(markedBoard.size(),CV_8UC1),false),
 			"Tracking displayed a grid after losing the complete chessboard");
+		FLAGS_projected_circle_radius=30;
 		FLAGS_projector_smoothing_rate=0.4;
         projector.setup_projector_parameters(cv::Size(1920, 1080), output.string(),
             cv::Size(4, 5), 120, 8, Tinker::ASYMMETRIC_CIRCLES_GRID, 0, 0);

@@ -1,7 +1,7 @@
 ﻿#include "capture.hpp"
 using namespace std;
 
-Tinker::capture::capture(const std::string& type, int index)
+Tinker::capture::capture(const std::string& type, int index, int requestedWidth, int requestedHeight)
 	: camera_type(type), camera_index(index)
 {
 	std::cout << "[capture ctor] this=" << this
@@ -14,6 +14,14 @@ Tinker::capture::capture(const std::string& type, int index)
 		bool ok = cap.open(camera_index, cv::CAP_DSHOW);
 		std::cout << "[capture ctor] after cap.open ok=" << ok
 			<< " isOpened=" << cap.isOpened() << "\n" << std::flush;
+		if (ok) {
+			const bool widthAccepted=cap.set(cv::CAP_PROP_FRAME_WIDTH,requestedWidth);
+			const bool heightAccepted=cap.set(cv::CAP_PROP_FRAME_HEIGHT,requestedHeight);
+			std::cout << "Camera mode request: " << requestedWidth << 'x' << requestedHeight
+				<< "; property results width=" << widthAccepted << ", height=" << heightAccepted
+				<< "; negotiated properties=" << cvRound(cap.get(cv::CAP_PROP_FRAME_WIDTH)) << 'x'
+				<< cvRound(cap.get(cv::CAP_PROP_FRAME_HEIGHT)) << std::endl;
+		}
 	}
 }
 

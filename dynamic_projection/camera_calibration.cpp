@@ -169,7 +169,7 @@ bool Tinker::camera_calibration::find_board(Mat img)
 		vector<int> ids;
 		vector<vector<Point2f>> markerCorners;
 		detector.detectMarkers(gray, markerCorners, ids);
-		const auto isAnchor = [](int id) { return id == FLAGS_board_origin_aruco_id || id == FLAGS_board_origin_secondary_aruco_id; };
+		const auto isAnchor = [](int id) { return id == FLAGS_board_origin_aruco_id; };
 		if (std::none_of(ids.begin(), ids.end(), isAnchor)) {
 			// Retry small codes at a larger sampling scale; this cannot restore
 			// detail lost to blur, but can recover thresholding/contour failures.
@@ -180,7 +180,7 @@ bool Tinker::camera_calibration::find_board(Mat img)
 		}
 		chessGray = gray.clone();
 		for (size_t index = 0; index < ids.size(); ++index) {
-			if (ids[index] != FLAGS_board_origin_aruco_id && ids[index] != FLAGS_board_origin_secondary_aruco_id) continue;
+			if (ids[index] != FLAGS_board_origin_aruco_id) continue;
 			Point2f center;
 			vector<Point> polygon;
 			for (const auto& point : markerCorners[index]) { center += point * 0.25f; polygon.emplace_back(cvRound(point.x), cvRound(point.y)); }
@@ -190,12 +190,24 @@ bool Tinker::camera_calibration::find_board(Mat img)
 			fillConvexPoly(chessGray, polygon, Scalar(255));
 		}
 	}
+	bool usedSectorBasedDetector = false;
 	bool foundChessCorners = findChessboardCorners(chessGray, boardSize, detected_board_points,
 		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE);
+	if (!foundChessCorners) {
+		// The sector-based detector is slower than the classic detector, but is
+		// substantially more tolerant of perspective, blur and uneven lighting.
+		// Keep it as a fallback so normal frames retain the lower latency path.
+		foundChessCorners = findChessboardCornersSB(chessGray, boardSize, detected_board_points,
+			CALIB_CB_NORMALIZE_IMAGE | CALIB_CB_EXHAUSTIVE | CALIB_CB_ACCURACY);
+		usedSectorBasedDetector = foundChessCorners;
+	}
 
 	if (foundChessCorners) {
-		cornerSubPix(chessGray, detected_board_points, Size(11, 11),
-			Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+		// findChessboardCornersSB already returns subpixel coordinates.
+		if (!usedSectorBasedDetector) {
+			cornerSubPix(chessGray, detected_board_points, Size(11, 11),
+				Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+		}
 		if (FLAGS_require_board_orientation) {
 			foundChessCorners = orientation_tracker.orient(detected_board_points, boardSize, markers, orientation_status);
 		}
@@ -204,7 +216,7 @@ bool Tinker::camera_calibration::find_board(Mat img)
 	else {
 		orientation_tracker.reset();
 		orientation_status = "complete chessboard missing; readable anchor markers=" + std::to_string(markers.size()) +
-			"; keep all 9x6 inner corners visible";
+			"; keep all " + std::to_string(boardSize.width) + "x" + std::to_string(boardSize.height) + " inner corners visible";
 	}
 	if (!foundChessCorners && FLAGS_require_board_orientation && markers.empty() && !detected_board_points.empty())
 		orientation_status += "; no readable anchor IDs (check marker size, blur and dictionary)";
@@ -256,17 +268,47 @@ bool Tinker::camera_calibration::back_project(const Mat & boardRot64, const Mat 
 
 void Tinker::camera_calibration::load_camera_matrix(string fileName)
 {
-
 	// check for previous calibration files with the same file name
 	struct stat buffer;
 	bool found = stat(fileName.c_str(), &buffer) == 0;
 	cout << "Camera calibration file exists : " << found << endl;
-	if (found) {
-		camera_is_calibrated = true;
-		FileStorage fs(fileName, FileStorage::READ);
-		fs["camera_matrix"] >> cameraMatrix;
-		fs["distortion_coefficients"] >> distCoeffs;
+	camera_is_calibrated = false;
+	cameraMatrix.release();
+	distCoeffs.release();
+	if (!found) return;
+
+	FileStorage fs(fileName, FileStorage::READ);
+	if (!fs.isOpened()) {
+		cout << "Camera calibration load rejected: file could not be opened." << endl;
+		return;
 	}
+	int savedWidth=0,savedHeight=0;
+	fs["image_width"] >> savedWidth;
+	fs["image_height"] >> savedHeight;
+	if (imageSize.width>0 && imageSize.height>0 &&
+		(savedWidth!=imageSize.width || savedHeight!=imageSize.height)) {
+		cout << "Camera calibration load rejected: saved image size " << savedWidth << 'x' << savedHeight
+			<< " does not match live capture " << imageSize.width << 'x' << imageSize.height
+			<< "; collect a fresh camera calibration." << endl;
+		return;
+	}
+	Mat loadedMatrix,loadedDistortion;
+	fs["camera_matrix"] >> loadedMatrix;
+	fs["distortion_coefficients"] >> loadedDistortion;
+	if (loadedMatrix.rows!=3 || loadedMatrix.cols!=3 || loadedDistortion.empty() ||
+		!checkRange(loadedMatrix) || !checkRange(loadedDistortion)) {
+		cout << "Camera calibration load rejected: intrinsic parameters are missing or invalid." << endl;
+		return;
+	}
+	loadedMatrix.convertTo(loadedMatrix,CV_64F);
+	loadedDistortion.convertTo(loadedDistortion,CV_64F);
+	if (loadedMatrix.at<double>(0,0)<=0 || loadedMatrix.at<double>(1,1)<=0) {
+		cout << "Camera calibration load rejected: focal lengths must be positive." << endl;
+		return;
+	}
+	cameraMatrix=loadedMatrix;
+	distCoeffs=loadedDistortion;
+	camera_is_calibrated = true;
 }
 
 double Tinker::camera_calibration::computeReprojectionErrors(const vector<vector<Point3f>>& objectPoints, const vector<vector<Point2f>>& imagePoints, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const Mat & cameraMatrix, const Mat & distCoeffs, vector<float>& perViewErrors)
