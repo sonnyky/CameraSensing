@@ -13,7 +13,7 @@ namespace Tinker {
 		projector_calibration();
 		~projector_calibration();
 
-		void load(string projector_config);
+		bool load(string projector_config);
 
 		Mat get_dist_coeffs() { return distCoeffs; }
 		Mat get_camera_matrix() { return cameraMatrix; }
@@ -48,7 +48,7 @@ namespace Tinker {
 
 		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, Pattern _patternType, float px, float py);
 
-		void load_calibration_parameters(string fileName);
+		bool load_calibration_parameters(string fileName);
 
 		void reset_boards();
 

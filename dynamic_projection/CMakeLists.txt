@@ -42,6 +42,7 @@ set(SOURCES
   calibration.cpp
   calibration_view_selection.cpp
   projector_circle_detection.cpp
+  gray_code_calibration.cpp
   board_orientation_tracker.cpp
   ${ADDITIONAL_INCLUDE}/dynamic_projection.hpp
   ${ADDITIONAL_INCLUDE}/state.hpp
@@ -51,6 +52,7 @@ set(SOURCES
   ${ADDITIONAL_INCLUDE}/projector_calibration.hpp
   ${ADDITIONAL_INCLUDE}/calibration.hpp
   ${ADDITIONAL_INCLUDE}/calibration_view_selection.hpp
+  ${ADDITIONAL_INCLUDE}/gray_code_calibration.hpp
 )
 
 add_executable(dynamic_projection ${SOURCES})
@@ -77,7 +79,7 @@ if(DYNAMIC_PROJECTION_BUILD_TESTS)
   enable_testing()
   add_executable(projector_calibration_tests
     tests/projector_calibration_tests.cpp
-    calibration.cpp projector_calibration.cpp camera_calibration.cpp calibration_view_selection.cpp projector_circle_detection.cpp board_orientation_tracker.cpp flags.cpp)
+    calibration.cpp projector_calibration.cpp camera_calibration.cpp calibration_view_selection.cpp projector_circle_detection.cpp gray_code_calibration.cpp board_orientation_tracker.cpp flags.cpp)
   target_include_directories(projector_calibration_tests PRIVATE ${ADDITIONAL_INCLUDE} ${OpenCV_INCLUDE_DIRS})
   target_link_libraries(projector_calibration_tests PRIVATE ${DYNAMIC_PROJECTION_OPENCV_LIBS} gflags::gflags)
   add_test(NAME projector_calibration_tests COMMAND projector_calibration_tests)

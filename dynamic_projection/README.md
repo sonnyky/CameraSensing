@@ -41,7 +41,7 @@ Hardware-independent regression tests are built by default. Run them with:
 ctest --test-dir build/dynamic_projection -C Release --output-on-failure
 ```
 
-They cover default/compact static layouts, clipping rejection, actual synthetic circle detection (fixed threshold, Otsu, blob-area filtering and untouched inputs), clean-frame isolation, projection bounds, displayed-pattern snapshots, stereo-fit validation, distortion-corrected board-plane reconstruction at multiple depths, invalid-ray rejection, board-centroid selection, per-view RMS gating, reset behavior, and synthetic projector calibration/refitting with known intrinsics. They do not replace real-board detection and alignment validation. Set `-DDYNAMIC_PROJECTION_BUILD_TESTS=OFF` to omit the test target.
+They cover Gray-code generation, decoding and contrast rejection, actual synthetic circle detection for the dynamic phase, clean-frame isolation, projection bounds, displayed-pattern snapshots, stereo-fit validation, distortion-corrected board-plane reconstruction at multiple depths, invalid-ray rejection, board-centroid selection, per-view RMS gating, reset behavior, and synthetic projector calibration/refitting with known intrinsics. They do not replace real-board detection and alignment validation. Set `-DDYNAMIC_PROJECTION_BUILD_TESTS=OFF` to omit the test target.
 
 Run the Release executable. By default, calibration files are written beside the executable:
 
@@ -55,7 +55,9 @@ The camera capture request defaults to **1280×720**. Startup prints both the re
 
 An existing `camera_params.xml` is loaded only when its saved image size exactly matches the live capture size. An incompatible file is ignored and the program requests a fresh camera calibration. This prevents correct detected corners from being combined with stale intrinsics, which would misplace the reprojected cyan checkerboard boundary and later projector geometry. Changing only the printed square size does not invalidate camera intrinsics, but changing capture resolution, camera mode, focus, zoom or camera hardware requires recalibration.
 
-Both calibration files include their solved intrinsic parameters, per-view reprojection errors, per-view extrinsics, and detected image points. After dynamic calibration succeeds, `projector_params.xml` also includes the final camera-to-projector rotation vector, rotation matrix, translation vector, and stereo RMS error. Set `--calibration_output_dir` to write the files elsewhere.
+Both calibration files include their solved intrinsic parameters, per-view reprojection errors, per-view extrinsics, and detected image points. As soon as static projector calibration succeeds, `projector_params.xml` also receives a `static_` camera-to-projector transform so an interrupted run can resume at dynamic calibration. Dynamic completion appends the final unprefixed transform used by tracking. Set `--calibration_output_dir` to write the files elsewhere.
+
+Startup defaults to `--calibration_file_mode=redo`, which performs every phase and replaces results only after the corresponding phase succeeds. Use `--calibration_file_mode=reuse` to load validated files: a complete file enters tracking, a static-only file resumes dynamic calibration, a camera-only result starts static projector calibration, and missing/incompatible results fall back to the earliest required phase.
 
 ## Calibration Process
 
@@ -68,7 +70,7 @@ For camera, static-projector, and dynamic-projector calibration, the app accepts
 
 Camera and static-projector calibration collect `--calibration_candidate_margin` extra accepted views before selecting their final retained set. Candidate views first pass a robust per-view RMS gate based on the median and median absolute deviation, capped by the configured per-view RMS limit. The retained views are then chosen for diversity across detected-pattern position, board depth, tilt, and roll. Calibration continues collecting views until selection-time coverage checks pass and the final recalibration meets the aggregate-RMS limit.
 
-Board-position coverage uses the chessboard-corner centroid in both phases, measuring the largest pairwise separation after normalizing X by camera image width and Y by height. Camera selection requires `--minimum_calibration_position_span` (0.25); static-projector selection uses its own `--minimum_projector_board_position_span` (0.10). Static-projector selection additionally checks the normalized diagonal of the bounding box of selected circle centers in **projector pixels**, using `--minimum_projector_pattern_span` (0.20). This is pattern footprint, not circle-centroid movement in the camera. A fixed grid does not need to move across the camera image to pass board-pose diversity. Footprint alone does not guarantee full projector field-of-view coverage or accurate distortion outside that footprint.
+Board-position coverage uses the chessboard-corner centroid in both phases, measuring the largest pairwise separation after normalizing X by camera image width and Y by height. Camera selection requires `--minimum_calibration_position_span` (0.25); static-projector selection uses its own `--minimum_projector_board_position_span` (0.10). Static-projector selection additionally checks the normalized diagonal of decoded points in **projector pixels**, using `--minimum_projector_pattern_span` (0.20). Footprint alone does not guarantee full projector field-of-view coverage or accurate distortion outside that footprint.
 
 Depth coverage uses the far-to-near ratio of the absolute board-origin Z translation, and tilt coverage uses the largest pairwise board-normal angle. Camera depth and tilt checks use preliminary calibration poses and are not repeated after the final camera refit. Static-projector checks use the camera-estimated board poses. These are selection-time coverage tests, not a guarantee about poses recomputed with the final camera intrinsics.
 
@@ -115,16 +117,19 @@ The code rejects camera RMS outliers, selects `--minimum_frames` diverse views f
 
 ### 2. Static Projector Calibration
 
-The projector displays a fixed asymmetric circle grid on the same physical plane as the printed chessboard.
+Static projector calibration uses temporally encoded Gray code instead of a simultaneous 4×5 circle grid. This allows the A4 checkerboard itself to be the projection surface even when projected light obscures the printed pattern.
 
-For each accepted frame:
+For each board position, the program automatically captures:
 
-- the printed chessboard is detected
-- the projected circle grid is detected
-- the board pose is estimated from the camera calibration
-- projected circle image points seen by the camera are back-projected onto the board plane
+1. a black reference frame, where it detects the complete checkerboard and ID 30 and stores the clean board pose;
+2. a white reference frame;
+3. normal/inverse Gray-code bit pairs for coarse projector X and Y cells;
+4. four sinusoidal phase-shift frames for each axis, which refine the coordinate inside each cell;
+5. a final black frame used to verify that the board did not move.
 
-That gives 3D points on the board plane and their corresponding 2D projector image coordinates. These are used to calibrate the projector intrinsics with `calibrateCamera()`.
+With the default 8×8-projector-pixel Gray cells, 1920×1080 requires 8 X bits and 8 Y bits. Black/white references, normal/inverse Gray pairs, and eight phase frames therefore use 42 reference/code frames plus one final motion-check frame: **43 captured frames per board position**. The Gray cells remain robust through optical blur. Phase patterns use a separate 32-pixel spatial period so their modulation remains visible, while the decoded Gray cell resolves the repeated phase cycle and a consistency check rejects disagreements. The count is derived automatically from projector resolution and does not change with `--static_gray_phase_period_px`. The default static calibration retains 8 diverse board positions and collects 12 candidates (8 plus the default 4-view quality/diversity margin).
+
+The decoder samples known checkerboard-square centers, pairs their board coordinates with decoded projector pixels, and uses those correspondences to calibrate projector intrinsics with `calibrateCamera()`. Printed black/white texture is rejected by normal/inverse comparison rather than being treated as a circle grid.
 
 The projector is treated like an inverse camera:
 
@@ -155,48 +160,37 @@ Where:
 
 This phase also rejects projector RMS outliers, selects a diverse retained set, and enforces an aggregate projector RMS limit before accepting the static calibration.
 
-#### Fitting the static grid to a limited-size board
+#### Capturing Gray code on the A4 board
 
-Keep the camera and projector fixed and move only the board. The fixed 4x5 asymmetric grid can be resized with `--static_projector_spacing_px` and repositioned using `--static_projector_center_x` / `--static_projector_center_y` (fractions of projector image width/height). Defaults preserve the original centered grid: spacing 120 pixels and radius 30 pixels, approximately 900x540 pixels including circle edges.
+Keep the camera and projector fixed and move only the board between complete Gray/phase sequences. The projector remains black while you prop the board; when the complete checkerboard and ID 30 are stable, focus an OpenCV window and press **Space or Enter** to start exactly one 43-frame sequence. After that sequence is accepted or rejected, the application returns to the manual waiting state. Exposure, focus and white balance should remain fixed.
 
-For a compact starting point on your panel, run from the repository root:
+The console reports the required action explicitly:
 
-```powershell
-.\build\Release\dynamic_projection.exe `
-  --static_projector_spacing_px=60 `
-  --projected_circle_radius=15 `
-  --static_projector_center_x=0.5 `
-  --static_projector_center_y=0.5
-```
+- `HOLD THE CHECKERBOARD STILL` starts a sequence.
+- `READY ... press SPACE or ENTER` means capture is waiting while you finish positioning and propping the board.
+- `BOARD NOT STATIC ENOUGH` discards the entire sequence and reports measured RMS motion.
+- `READY TO MOVE THE CHECKERBOARD TO A DIFFERENT POSITION` means one view was accepted; vary image position, distance and tilt before holding still again.
+- `FINISHED WITH STATIC PROJECTOR CALIBRATION` means projector intrinsics and the initial stereo transform passed their quality checks.
 
-This gives approximately 450x270 projector pixels including circle edges. Adjust the center so the circles land on the white area beside the marker. Pixel footprint is not a physical board measurement: check the actual projection. These flags change static-grid coordinates consistently in rendering and calibration; they do not change the dynamic board-coordinate grid spacing or its offset. The radius flag applies in every phase. Restart calibration after changing flags; do not move/resize the displayed grid during a run.
+`ImageThresholded` displays the white-reference camera frame with accepted Gray-code sample locations in green and rejected locations in red. A view requires at least 12 decoded points, although the 9×6 board supplies up to 70 square-center candidates.
 
-Use the largest grid that leaves room for different tilts and distances. Very small circles are harder to detect, and a small projector footprint constrains less of its optics. Circles that touch, a static grid clipped by the projector image, or a grid below the minimum projector footprint are rejected before frame collection. The RMS limits, depth ratio and tilt requirements are unchanged; the separate projector board-position default is deliberately less restrictive than the camera default.
+Rejection diagnostics report `coarse_gray_valid`, `phase_valid`, and `gray_phase_consistent` separately. After two consecutive sequences with zero phase-valid points, automatic capture pauses instead of repeating indefinitely; move the board by the configured sample-motion distance to retry.
 
 #### Understanding capture and selection messages
 
-`current projector candidate count: 3/12` means only three samples have been captured; diversity and RMS selection have not run yet. Capture-rejection messages (throttled to at most one every two seconds between accepted samples) distinguish missing chessboard, missing complete circle grid, waiting for the sample interval, and insufficient corner movement. Check `ImageThresholded` when the circle grid is missing. The capture gate checks movement before attempting circle detection, so a waiting/movement message does not confirm that circles were detected.
+`current projector candidate count: 3/12` means three complete Gray-code board positions have been accepted; diversity and RMS selection have not run yet. The default retains eight positions after collecting twelve candidates. Waiting messages distinguish a missing complete board/ID 30, insufficient movement since the previous accepted position, motion during a sequence, and insufficient Gray-code contrast.
 
-After the candidate target is reached, separate messages report insufficient RMS-eligible views, insufficient board translation, depth or tilt, and insufficient projector-image footprint. A footprint failure cannot be fixed by collecting more views of the same fixed grid: enlarge the spacing and restart. A final aggregate RMS failure remains a separate rejection. Preliminary fit RMS can exceed the final completion limit because selection/refitting has not yet completed.
+After the candidate target is reached, separate messages report insufficient RMS-eligible views, insufficient board translation, depth or tilt, and insufficient decoded projector-image footprint. Improve coverage by moving the board through more of the projector field while retaining useful tilt and depth variation. A final aggregate RMS failure remains a separate rejection. Preliminary fit RMS can exceed the final completion limit because selection/refitting has not yet completed.
 
 Each fit logs the preliminary per-view RMS and eligibility/selection status for every candidate, using 1-based capture numbers. The robust eligibility threshold can be stricter than the absolute per-view limit. With too few eligible views, coverage is explicitly **not evaluated** rather than printing default zero spans. The final refit logs each retained candidate's RMS with its original capture number. Preliminary values are recomputed as new samples arrive; they are residuals of the joint model, not independent measurements of frame quality. Persistent errors across most views can indicate camera-calibration error, board non-flatness or detection bias as well as poor images. The eight-view target and final RMS limits are not relaxed.
 
-#### Circle-detection diagnostics and tuning
+#### Dynamic circle-detection diagnostics and tuning
 
-Circle detection operates on an unannotated, inverse-thresholded camera image. Chessboard/debug graphics are drawn only **after** circle detection. `ImageThresholded` then overlays red blob candidates and their count; these include clutter and do not imply a valid grid. Detection requires the correct ordered 4x5 grid, not simply 20 arbitrary blobs. On frames rejected by the chessboard/time/movement gate, circle detection is not attempted and no blob overlay is shown.
+The following circle settings apply to dynamic calibration, not the new static Gray-code phase. Circle detection operates on an unannotated, inverse-thresholded camera image. Chessboard/debug graphics are drawn only **after** circle detection. `ImageThresholded` then overlays red blob candidates and their count; these include clutter and do not imply a valid grid. Detection requires the correct ordered 4x5 grid, not simply 20 arbitrary blobs.
 
 The default brightness threshold remains 210/255. Bright projected circles should appear as isolated black disks on a white background in the thresholded image. If they vanish, lower `--projector_detection_threshold`; if they merge into bright surrounding board regions, adjust exposure/lighting or the threshold. `--projector_detection_threshold=-1` enables global Otsu thresholding, but the printed chessboard and scene background can dominate its histogram, so it is not guaranteed to work better.
 
 Blob-area limits are in **camera-image pixels squared**, not projector pixels or board units. Defaults match the previous detector: min area 25, max area 5000, inertia ratio 0.1, convexity 0.95, circularity filtering disabled. Smaller/farther circles may need a lower minimum area; larger/nearer circles may need a higher maximum. Tilt creates elliptical blobs: overly strict shape filters can reject valid circles. Zero disables a shape filter, but relaxing filters also admits clutter. Change settings between runs, not during calibration.
-
-Example starting point for a compact pattern whose captured circles are below brightness 210 (150 is illustrative; choose it from the actual thresholded view):
-
-```powershell
-.\build\Release\dynamic_projection.exe `
-  --static_projector_spacing_px=60 `
-  --projected_circle_radius=15 `
-  --projector_detection_threshold=150
-```
 
 These detection changes do not alter the camera/projector calibration equations or RMS limits, but different measured centers can change the numerical calibration result. Verify final alignment using real-board poses after tuning.
 
@@ -354,11 +348,16 @@ The application currently supports these command-line parameters from [`include/
 | `--projection_region_center_x_cm` | `8.0` | Region horizontal center relative to the anchored origin; centers the default 160 mm inner-corner span |
 | `--projector_offset_y_scale` | `0.9` | Legacy board-Y offset; used only when both placement flags are false |
 | `--projected_circle_radius` | `30` | Radius of each projected circle in projector pixels |
-| `--static_projector_spacing_px` | `120.0` | Static asymmetric-grid spacing in projector pixels |
-| `--static_projector_center_x` | `0.5` | Static grid center as a fraction of projector width |
-| `--static_projector_center_y` | `0.5` | Static grid center as a fraction of projector height |
+| `--static_gray_max_board_motion_px` | `3.5` | Maximum corner RMS motion over a complete static Gray/phase sequence |
+| `--static_gray_min_direct_contrast` | `5.0` | Minimum absolute white-versus-black camera intensity change for a decoded point |
+| `--static_gray_min_bit_contrast` | `8.0` | Minimum normal/inverse Gray contrast and phase-modulation amplitude |
+| `--static_gray_sample_radius_px` | `0` | Radius of the camera patch sampled at each board-square center; zero uses one pixel |
+| `--static_gray_projector_block_size` | `8` | Coarse Gray-cell size in projector pixels; four-step phase decoding refines the coordinate within each cell |
+| `--static_gray_phase_period_px` | `32` | Sinusoidal phase-pattern period; must be a multiple of the Gray-cell size |
+| `--static_gray_start_delay_seconds` | `3` | Countdown after camera calibration before static Gray-code capture starts |
+| `--calibration_file_mode` | `redo` | `redo` performs all phases; `reuse` validates saved files and resumes at the next incomplete phase |
 | `--minimum_projector_board_position_span` | `0.10` | Minimum normalized chessboard-centroid span for static-projector selection |
-| `--minimum_projector_pattern_span` | `0.20` | Minimum normalized diagonal circle-center footprint in projector pixels |
+| `--minimum_projector_pattern_span` | `0.20` | Minimum normalized diagonal decoded-point footprint in projector pixels |
 | `--projector_detection_threshold` | `210.0` | Camera brightness threshold, 0..255; -1 enables global Otsu |
 | `--projector_blob_min_area` | `25.0` | Minimum blob area in camera pixels squared |
 | `--projector_blob_max_area` | `5000.0` | Maximum blob area in camera pixels squared |
@@ -440,11 +439,11 @@ Do not resize the printed marker without updating `--board_square_size_cm` to it
 
 ### Static Projector Calibration
 
-- The full chessboard and the full projected circle grid should both be visible.
-- Keep both on the same planar surface.
-- Avoid clipping the projected circles at the board edge or image edge.
-- If possible, keep projected light from washing out the chessboard corners.
-- Use several tilted views, not only fronto-parallel views.
+- Support the board so it remains within the configured 3.5-pixel RMS motion limit for all 43 captures.
+- Keep the full checkerboard and ID 30 visible in the initial and final black frames.
+- Lock exposure, focus and white balance; auto-exposure changes reduce normal/inverse contrast.
+- Move only after `READY TO MOVE THE CHECKERBOARD TO A DIFFERENT POSITION` appears.
+- Use varied translations, distances and tilts, not only fronto-parallel views.
 
 ### Dynamic Projector Calibration
 

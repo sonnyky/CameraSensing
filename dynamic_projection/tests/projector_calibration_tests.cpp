@@ -10,6 +10,7 @@
 #include "projector_distortion_validation.hpp"
 #include "shared_pose_smoothing.hpp"
 #include "display_selection.hpp"
+#include "gray_code_calibration.hpp"
 #include <opencv2/objdetect/aruco_dictionary.hpp>
 #include <algorithm>
 #include <cmath>
@@ -72,6 +73,83 @@ int main(int argc, char** argv)
 			"Defaults do not match the 9x6, 20 mm checkerboard");
 		require(FLAGS_camera_width==1280 && FLAGS_camera_height==720,
 			"Default camera mode does not match the 1280x720 camera");
+		const cv::Size grayTestSize(64,32);
+		const auto grayPatterns=Tinker::make_gray_code_patterns(grayTestSize);
+		require(grayPatterns.size()==32,"Gray/phase generator emitted the wrong number of frames");
+		std::vector<cv::Point2f> grayCameraSamples;
+		std::vector<cv::Point3f> grayBoardSamples;
+		for (int y : {3,9,17,25}) for (int x : {3,13,29,51}) {
+			grayCameraSamples.emplace_back(static_cast<float>(x),static_cast<float>(y));
+			grayBoardSamples.emplace_back(static_cast<float>(x),static_cast<float>(y),0.0f);
+		}
+		std::vector<cv::Point2f> grayDecoded,grayAcceptedCamera;
+		std::vector<cv::Point3f> grayAcceptedBoard;
+		std::string grayReason;
+		require(Tinker::decode_gray_code_samples(grayPatterns,grayTestSize,1,0,grayCameraSamples,grayBoardSamples,
+			20,8,0,grayDecoded,grayAcceptedCamera,grayAcceptedBoard,nullptr,grayReason),
+			"Synthetic Gray-code sequence was not decoded");
+		require(grayDecoded.size()==grayCameraSamples.size() && grayAcceptedBoard==grayBoardSamples,
+			"Gray-code decoder returned the wrong correspondence count");
+		for (size_t index=0;index<grayDecoded.size();++index)
+			require(cv::norm(grayDecoded[index]-grayCameraSamples[index])<0.05,
+				"Phase refinement returned an incorrect projector coordinate");
+		auto flatGrayFrames=grayPatterns;
+		for (auto& frame:flatGrayFrames) frame.setTo(100);
+		require(!Tinker::decode_gray_code_samples(flatGrayFrames,grayTestSize,1,0,grayCameraSamples,grayBoardSamples,
+			20,8,0,grayDecoded,grayAcceptedCamera,grayAcceptedBoard,nullptr,grayReason),
+			"Zero-contrast Gray-code sequence was accepted");
+		const auto blockedGrayPatterns=Tinker::make_gray_code_patterns(grayTestSize,4);
+		require(blockedGrayPatterns.size()==24,
+			"Four-pixel Gray/phase cells emitted the wrong number of frames");
+		std::vector<cv::Point2f> blockedCameraSamples;
+		for (int y:{1,9,17,25}) for (int x:{1,13,29,53})
+			blockedCameraSamples.emplace_back(static_cast<float>(x),static_cast<float>(y));
+		std::vector<cv::Point3f> blockedBoardSamples;
+		for (const auto& point:blockedCameraSamples)
+			blockedBoardSamples.emplace_back(point.x,point.y,0.0f);
+		require(Tinker::decode_gray_code_samples(blockedGrayPatterns,grayTestSize,4,0,
+			blockedCameraSamples,blockedBoardSamples,20,8,0,grayDecoded,grayAcceptedCamera,
+			grayAcceptedBoard,nullptr,grayReason),
+			"Four-pixel Gray-code cells were not decoded");
+		require(grayDecoded.size()==blockedCameraSamples.size(),
+			"Four-pixel Gray/phase cells returned the wrong correspondence count");
+		for (size_t index=0;index<grayDecoded.size();++index)
+			require(cv::norm(grayDecoded[index]-blockedCameraSamples[index])<0.05,
+				"Four-pixel phase refinement returned an incorrect projector coordinate");
+		const auto widePhasePatterns=Tinker::make_gray_code_patterns(grayTestSize,8,32);
+		std::vector<cv::Point2f> widePhaseSamples;
+		std::vector<cv::Point3f> widePhaseBoard;
+		for (int y:{2,10,18,26}) for (int x:{2,14,30,54}) {
+			widePhaseSamples.emplace_back(static_cast<float>(x),static_cast<float>(y));
+			widePhaseBoard.emplace_back(static_cast<float>(x),static_cast<float>(y),0.0f);
+		}
+		Tinker::GrayCodeDecodeDiagnostics wideDiagnostics;
+		require(Tinker::decode_gray_code_samples(widePhasePatterns,grayTestSize,8,32,
+			widePhaseSamples,widePhaseBoard,20,8,0,grayDecoded,grayAcceptedCamera,
+			grayAcceptedBoard,nullptr,grayReason,&wideDiagnostics),
+			"Wide-period phase refinement was not decoded");
+		require(wideDiagnostics.coarseGrayValid==widePhaseSamples.size() &&
+			wideDiagnostics.phaseValid==widePhaseSamples.size() &&
+			wideDiagnostics.grayPhaseConsistent==widePhaseSamples.size(),
+			"Gray/phase stage diagnostics reported incorrect valid counts");
+		for (size_t index=0;index<grayDecoded.size();++index)
+			require(cv::norm(grayDecoded[index]-widePhaseSamples[index])<0.1,
+				"Wide-period phase refinement returned an incorrect projector coordinate");
+		auto blurredWidePhasePatterns=widePhasePatterns;
+		for (auto& pattern:blurredWidePhasePatterns)
+			cv::GaussianBlur(pattern,pattern,{9,9},2.0);
+		widePhaseSamples.clear(); widePhaseBoard.clear();
+		for (int y:{4,12,20,28}) for (int x:{4,12,20,28}) {
+			widePhaseSamples.emplace_back(static_cast<float>(x),static_cast<float>(y));
+			widePhaseBoard.emplace_back(static_cast<float>(x),static_cast<float>(y),0.0f);
+		}
+		require(Tinker::decode_gray_code_samples(blurredWidePhasePatterns,grayTestSize,8,32,
+			widePhaseSamples,widePhaseBoard,20,8,0,grayDecoded,grayAcceptedCamera,
+			grayAcceptedBoard,nullptr,grayReason,&wideDiagnostics),
+			"Wide-period phase refinement did not survive synthetic optical blur");
+		for (size_t index=0;index<grayDecoded.size();++index)
+			require(cv::norm(grayDecoded[index]-widePhaseSamples[index])<0.25,
+				"Blurred wide-period phase refinement lost projector accuracy");
 		const auto checkerGridOrigin=Tinker::centered_checkerboard_grid_origin(cv::Point3f(0,0,0),cv::Point3f(20,0,0),
 			cv::Point3f(0,20,0),cv::Size(9,6),cv::Size(4,5));
 		require(cv::norm(checkerGridOrigin-cv::Point3f(10,10,0))<0.01,
@@ -202,15 +280,10 @@ int main(int argc, char** argv)
         require(original.size() == 20, "Original grid point count changed");
         require(cv::norm(original.front() - cv::Point2f(540, 300)) < 0.001, "Original default layout changed");
         FLAGS_projected_circle_radius = 15;
-        FLAGS_static_projector_center_x = 0.6;
         setup(60);
         const auto compact = projector.get_candidate_image_points();
-        require(cv::norm(compact.front() - cv::Point2f(942, 420)) < 0.001, "Compact/offset grid incorrect");
-        require(cv::norm(compact[4] - cv::Point2f(1002, 480)) < 0.001, "Asymmetric row offset incorrect");
-        FLAGS_static_projector_center_x = 0.0;
-        bool clipped = false;
-        try { setup(60); } catch (const std::invalid_argument&) { clipped = true; }
-        require(clipped, "Clipped grid was not rejected");
+		require(cv::norm(compact.front() - cv::Point2f(750, 420)) < 0.001, "Compact grid incorrect");
+		require(cv::norm(compact[4] - cv::Point2f(810, 480)) < 0.001, "Asymmetric row offset incorrect");
 
         // Actual camera-space detection on an untouched synthetic image.
         cv::Mat captured(540, 960, CV_8UC1, cv::Scalar(60));
@@ -276,7 +349,6 @@ int main(int argc, char** argv)
 
         // Exercise the actual static calibration/refit and parallel-array selection
         // with known projector rays intersecting differently posed board planes.
-        FLAGS_static_projector_center_x = 0.5;
         FLAGS_projected_circle_radius = 30;
         const auto output = std::filesystem::temp_directory_path() /
             ("projector_regression_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".xml");
@@ -372,15 +444,18 @@ int main(int argc, char** argv)
 		RemoveOutput cleanupProjectionModel{projectionModelFile};
 		{
 			cv::FileStorage file(projectionModelFile,cv::FileStorage::WRITE);
-			file << "camera_matrix" << (cv::Mat_<double>(3,3) << 700,0,960,0,710,540,0,0,1)
+			file << "image_width" << 1920 << "image_height" << 1080
+				<< "camera_matrix" << (cv::Mat_<double>(3,3) << 700,0,960,0,710,540,0,0,1)
 				<< "distortion_coefficients" << cv::Mat::zeros(5,1,CV_64F)
 				<< "Rotation_Vector" << cv::Mat::zeros(3,1,CV_64F)
-				<< "Translation_Vector" << cv::Mat::zeros(3,1,CV_64F);
+				<< "Translation_Vector" << cv::Mat::zeros(3,1,CV_64F)
+				<< "stereo_rms_error" << 1.0;
 		}
 		auto configureProjection = [&](Tinker::calibration& manager) {
 			manager.setup_camera_calibration_parameters({9,6},markedBoard.size(),20,1,8,1000,Tinker::DETECTION,0,cameraFile);
 			manager.setup_projector_calibration_parameters({1920,1080},projectionModelFile,{4,5},120,8,5,Tinker::ASYMMETRIC_CIRCLES_GRID,0,0);
-			manager.load(cameraFile,projectionModelFile,projectionModelFile);
+			require(manager.load_saved_calibration(projectionModelFile)==Tinker::CalibrationReuseStage::Complete,
+				"Complete saved calibration was not reusable");
 		};
 		Tinker::calibration movingProjection, freshProjection;
 		configureProjection(movingProjection); configureProjection(freshProjection);
