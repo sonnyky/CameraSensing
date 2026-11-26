@@ -11,6 +11,7 @@
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/videoio.hpp"
 #include "opencv2/highgui.hpp"
+#include "board_orientation_tracker.hpp"
 
 #include <cctype>
 #include <stdio.h>
@@ -36,18 +37,14 @@ namespace Tinker {
 		void setup_parameters(
 			Size boardSize_, 
 			Size imageSize_,
-			string pattern_,
 			float squareSize_, 
 			float aspectRatio_,
 			int nFrames_,
-			int delay_,
 			int mode_,
-			bool writePoints_,
-			bool writeExtrinsics_,
 			int cameraId_,
 			string outputFileName_);
 
-		bool calibrate(Mat image_);
+		bool calibrate(Mat image_, const vector<Point2f>& detectedPoints = {});
 
 		void set_to_calibration_mode();
 
@@ -76,7 +73,8 @@ namespace Tinker {
 		vector<vector<Point2f>> imagePointsCamObj;
 
 		vector<cv::Point3f> get_candidate_object_points() { return candidateObjectPts; }
-		vector<vector<cv::Point3f>> get_object_points() { return objectPoints; }
+		vector<vector<cv::Point3f>>& get_object_points() { return objectPoints; }
+		const vector<vector<cv::Point3f>>& get_object_points() const { return objectPoints; }
 
 		vector<Mat> get_board_rotations() { return boardRotations; }
 		vector<Mat> get_board_translations() { return boardTranslations; }
@@ -87,16 +85,20 @@ namespace Tinker {
 
 		Mat get_camera_matrix() { return cameraMatrix; }
 		Mat get_dist_coeffs() { return distCoeffs; }
+		bool is_calibrated() const { return camera_is_calibrated; }
 
 		void load_camera_matrix(string fileName);
 
 		Size get_image_size() { return imageSize; };
 
 		vector<Point2f> get_detected_board_points() { return detected_board_points; };
+		const string& get_orientation_status() const { return orientation_status; }
 
 	private:
 
 		vector<Point2f> detected_board_points;
+		BoardOrientationTracker orientation_tracker;
+		string orientation_status;
 
 		
 
@@ -107,26 +109,20 @@ namespace Tinker {
 		string outputFilename;
 
 		int i, nframes;
-		bool writeExtrinsics, writePoints;
 		bool undistortImage = false;
 		int flags = 0;
 
 		bool flipVertical;
 		bool showUndistorted;
 		bool videofile;
-		int delay;
-		clock_t prevTimestamp = 0;
 		int calibrationStatus = DETECTION;
 		int cameraId = 0;
 		vector<string> imageList;
-		String pattern = "chessboard";
-
 		bool camera_is_calibrated;
 		vector<vector<Point2f>> imagePoints;
 
 		vector<Point2f> pointbuf;
 		bool found;
-		clock_t previous_timestamp = 0;
 #pragma endregion
 
 #pragma region camera calibration methods
@@ -156,12 +152,6 @@ namespace Tinker {
 			const vector<float>& reprojErrs,
 			const vector<vector<Point2f> >& imagePoints,
 			double totalAvgErr);
-
-		static bool runAndSave(const string& outputFilename,
-			const vector<vector<Point2f> >& imagePoints,
-			Size imageSize, Size boardSize, Pattern patternType, float squareSize,
-			float aspectRatio, int flags, Mat& _cameraMatrix,
-			Mat& distCoeffs, bool writeExtrinsics, bool writePoints);
 	};
 #pragma endregion
 }

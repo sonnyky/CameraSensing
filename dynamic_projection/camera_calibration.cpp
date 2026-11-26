@@ -1,4 +1,8 @@
 #include "camera_calibration.hpp"
+#include "calibration_view_selection.hpp"
+#include "flags.hpp"
+#include <algorithm>
+#include <opencv2/objdetect/aruco_detector.hpp>
 
 Tinker::camera_calibration::camera_calibration()
 {
@@ -10,78 +14,109 @@ Tinker::camera_calibration::~camera_calibration()
 	calibrationStatus = CAPTURING;
 }
 
-void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, std::string outputFileName_)
+void Tinker::camera_calibration::setup_parameters(cv::Size boardSize_, cv::Size imageSize_, float squareSize_, float aspectRatio_, int nFrames_, int mode_, int cameraId_, std::string outputFileName_)
 {
 	boardSize = boardSize_;
+	orientation_tracker.reset();
 	imageSize = imageSize_;
-	pattern = pattern_;
 	patternLengthInRealUnits = squareSize_;
 	aspectRatio = aspectRatio_;
 	nframes = nFrames_;
-	delay = delay_;
 	calibrationStatus = mode_;
-	writePoints = writePoints_;
-	writeExtrinsics = writeExtrinsics_;
 	cameraId = cameraId_;
 	outputFilename = outputFileName_;
 	load_camera_matrix(outputFileName_);
 }
 
-bool Tinker::camera_calibration::calibrate(Mat image_)
+bool Tinker::camera_calibration::calibrate(Mat image_, const vector<Point2f>& detectedPoints)
 {
 	Mat viewGray;
 
-	Pattern calibPattern = CHESSBOARD;
-	if (pattern == "circles_grid") {
-		calibPattern = CIRCLES_GRID;
-	}
-	else if (pattern == "asymmetric_circles_grid") {
-		calibPattern = ASYMMETRIC_CIRCLES_GRID;
-	}
-	switch (calibPattern)
-	{
-	case CHESSBOARD:
-		found = findChessboardCorners(image_, boardSize, pointbuf,
-			CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
-		break;
-	case CIRCLES_GRID:
-		found = findCirclesGrid(image_, boardSize, pointbuf);
-		break;
-	case ASYMMETRIC_CIRCLES_GRID:
-		found = findCirclesGrid(image_, boardSize, pointbuf, CALIB_CB_ASYMMETRIC_GRID);
-		break;
-	default:
-		break;
-	}
-
-	cvtColor(image_, viewGray, COLOR_BGR2GRAY);
-	// improve the found corners' coordinate accuracy
-	if (calibPattern == CHESSBOARD && found) cornerSubPix(viewGray, pointbuf, Size(11, 11),
-		Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
-
-	if (found && (clock() - prevTimestamp > delay*1e-3*CLOCKS_PER_SEC))
-	{
-		imagePoints.push_back(pointbuf);
-		prevTimestamp = clock();
-	}
-
-	if (imagePoints.size() >= (unsigned)nframes)
-	{
-		cout << "got enough points" << endl;
-		if (runAndSave(outputFilename, imagePoints, imageSize,
-			boardSize, calibPattern, patternLengthInRealUnits, aspectRatio,
-			flags, cameraMatrix, distCoeffs,
-			writeExtrinsics, writePoints)) {
-			calibrationStatus = CALIBRATED;
-			load_camera_matrix(outputFilename);
-			return true;
-		}
-		else calibrationStatus = DETECTION;
-		
+	const Pattern calibPattern = CHESSBOARD;
+	if (!detectedPoints.empty()) {
+		pointbuf = detectedPoints;
+		found = true;
 	}
 	else {
-		
-		cout << "more points needed. we currently have : " << imagePoints.size() << " points." << endl;
+		found = findChessboardCorners(image_, boardSize, pointbuf,
+			CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+
+		cvtColor(image_, viewGray, COLOR_BGR2GRAY);
+		if (calibPattern == CHESSBOARD && found) {
+			cornerSubPix(viewGray, pointbuf, Size(11, 11),
+				Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+		}
+	}
+
+	if (found) {
+		imagePoints.push_back(pointbuf);
+	}
+
+	const size_t candidateTarget = static_cast<size_t>(nframes) +
+		static_cast<size_t>(FLAGS_calibration_candidate_margin);
+	if (imagePoints.size() >= candidateTarget)
+	{
+		vector<Mat> rvecs, tvecs;
+		vector<float> perViewRms;
+		double totalAvgErr = 0;
+
+		const bool preliminarySuccess = runCalibration(imagePoints, imageSize, boardSize, calibPattern, patternLengthInRealUnits,
+			aspectRatio, flags, cameraMatrix, distCoeffs,
+			rvecs, tvecs, perViewRms, totalAvgErr);
+		printf("%s. avg reprojection error for this batch = %.2f\n",
+			preliminarySuccess ? "Preliminary camera calibration succeeded" : "Preliminary camera calibration failed",
+			totalAvgErr);
+		if (!preliminarySuccess) {
+			return false;
+		}
+
+		const auto selection = select_calibration_views(
+			perViewRms, rvecs, tvecs, imagePoints, imageSize,
+			static_cast<size_t>(nframes), FLAGS_max_camera_per_view_rms,
+			FLAGS_minimum_calibration_position_span,
+			FLAGS_minimum_calibration_distance_ratio,
+			FLAGS_minimum_calibration_orientation_span_deg);
+		std::cout << "Camera selection: eligible threshold=" << selection.robustRmsThreshold
+			<< ", position span=" << selection.positionSpan
+			<< ", distance ratio=" << selection.distanceRatio
+			<< ", orientation span=" << selection.orientationSpanDegrees << " deg" << std::endl;
+		if (!selection.hasEnoughQualityViews || !selection.hasRequiredCoverage) {
+			std::cout << "Camera calibration needs more high-quality, diverse views." << std::endl;
+			return false;
+		}
+
+		std::vector<std::vector<cv::Point2f>> selectedImagePoints;
+		selectedImagePoints.reserve(selection.indices.size());
+		for (size_t index : selection.indices) {
+			selectedImagePoints.push_back(imagePoints[index]);
+		}
+
+		rvecs.clear();
+		tvecs.clear();
+		perViewRms.clear();
+		totalAvgErr = 0.0;
+		const bool finalSuccess = runCalibration(selectedImagePoints, imageSize, boardSize, calibPattern,
+			patternLengthInRealUnits, aspectRatio, flags, cameraMatrix, distCoeffs,
+			rvecs, tvecs, perViewRms, totalAvgErr);
+		printf("%s. avg reprojection error = %.2f\n",
+			finalSuccess ? "Final camera calibration succeeded" : "Final camera calibration failed",
+			totalAvgErr);
+		if (!finalSuccess || totalAvgErr > FLAGS_max_camera_rms) {
+			std::cout << "Camera aggregate RMS is above the completion threshold." << std::endl;
+			return false;
+		}
+
+		imagePoints.swap(selectedImagePoints);
+		saveCameraParams(outputFilename, imageSize,
+			boardSize, patternLengthInRealUnits, aspectRatio,
+			flags, cameraMatrix, distCoeffs,
+			rvecs, tvecs, perViewRms, imagePoints, totalAvgErr);
+		load_camera_matrix(outputFilename);
+		return true;
+	}
+	else {
+		cout << "more camera candidates needed. we currently have: " << imagePoints.size()
+			<< "/" << candidateTarget << " views." << endl;
 	}
 
 	return false;
@@ -91,7 +126,6 @@ bool Tinker::camera_calibration::calibrate(Mat image_)
 void Tinker::camera_calibration::set_to_calibration_mode()
 {
 	imagePoints.clear();
-	prevTimestamp = 0;
 	calibrationStatus = CAPTURING;
 }
 
@@ -116,8 +150,77 @@ void Tinker::camera_calibration::load(string camera_config)
 bool Tinker::camera_calibration::find_board(Mat img)
 {
 	detected_board_points.clear();
-	bool foundChessCorners = findChessboardCorners(img, boardSize, detected_board_points,
-		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+	Mat gray;
+	if (img.channels() == 3) {
+		cvtColor(img, gray, COLOR_BGR2GRAY);
+	}
+	else {
+		gray = img;
+	}
+
+	vector<BoardOrientationMarker> markers;
+	Mat chessGray = gray;
+	if (FLAGS_require_board_orientation) {
+		cv::aruco::DetectorParameters parameters;
+		parameters.minMarkerPerimeterRate = 0.01;
+		parameters.adaptiveThreshWinSizeMax = 53;
+		parameters.cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+		cv::aruco::ArucoDetector detector(cv::aruco::getPredefinedDictionary(FLAGS_board_aruco_dictionary), parameters);
+		vector<int> ids;
+		vector<vector<Point2f>> markerCorners;
+		detector.detectMarkers(gray, markerCorners, ids);
+		const auto isAnchor = [](int id) { return id == FLAGS_board_origin_aruco_id; };
+		if (std::none_of(ids.begin(), ids.end(), isAnchor)) {
+			// Retry small codes at a larger sampling scale; this cannot restore
+			// detail lost to blur, but can recover thresholding/contour failures.
+			Mat enlarged;
+			resize(gray, enlarged, Size(), 2, 2, INTER_CUBIC);
+			detector.detectMarkers(enlarged, markerCorners, ids);
+			for (auto& polygon : markerCorners) for (auto& point : polygon) point *= 0.5f;
+		}
+		chessGray = gray.clone();
+		for (size_t index = 0; index < ids.size(); ++index) {
+			if (ids[index] != FLAGS_board_origin_aruco_id) continue;
+			Point2f center;
+			vector<Point> polygon;
+			for (const auto& point : markerCorners[index]) { center += point * 0.25f; polygon.emplace_back(cvRound(point.x), cvRound(point.y)); }
+			markers.push_back({ids[index], center});
+			// These markers are on white squares. Remove their black interiors
+			// from the private chessboard image so they do not bias corner refinement.
+			fillConvexPoly(chessGray, polygon, Scalar(255));
+		}
+	}
+	bool usedSectorBasedDetector = false;
+	bool foundChessCorners = findChessboardCorners(chessGray, boardSize, detected_board_points,
+		CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE);
+	if (!foundChessCorners) {
+		// The sector-based detector is slower than the classic detector, but is
+		// substantially more tolerant of perspective, blur and uneven lighting.
+		// Keep it as a fallback so normal frames retain the lower latency path.
+		foundChessCorners = findChessboardCornersSB(chessGray, boardSize, detected_board_points,
+			CALIB_CB_NORMALIZE_IMAGE | CALIB_CB_EXHAUSTIVE | CALIB_CB_ACCURACY);
+		usedSectorBasedDetector = foundChessCorners;
+	}
+
+	if (foundChessCorners) {
+		// findChessboardCornersSB already returns subpixel coordinates.
+		if (!usedSectorBasedDetector) {
+			cornerSubPix(chessGray, detected_board_points, Size(11, 11),
+				Size(-1, -1), TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+		}
+		if (FLAGS_require_board_orientation) {
+			foundChessCorners = orientation_tracker.orient(detected_board_points, boardSize, markers, orientation_status);
+		}
+		else orientation_status = "origin anchoring disabled";
+	}
+	else {
+		orientation_tracker.reset();
+		orientation_status = "complete chessboard missing; readable anchor markers=" + std::to_string(markers.size()) +
+			"; keep all " + std::to_string(boardSize.width) + "x" + std::to_string(boardSize.height) + " inner corners visible";
+	}
+	if (!foundChessCorners && FLAGS_require_board_orientation && markers.empty() && !detected_board_points.empty())
+		orientation_status += "; no readable anchor IDs (check marker size, blur and dictionary)";
+	if (!foundChessCorners) detected_board_points.clear();
 
 	return foundChessCorners;
 }
@@ -137,62 +240,75 @@ void Tinker::camera_calibration::compute_candidate_board_pose(const vector<cv::P
 
 bool Tinker::camera_calibration::back_project(const Mat & boardRot64, const Mat & boardTrans64, const vector<Point2f>& imgPt, vector<Point3f>& worldPt)
 {
-	if (imgPt.size() == 0) {
-		return false;
+	if (imgPt.empty() || cameraMatrix.empty() || !checkRange(boardRot64) || !checkRange(boardTrans64)) return false;
+	vector<Point2d> observed(imgPt.begin(), imgPt.end()), normalized;
+	// Remove lens distortion BEFORE intersecting camera rays with the board plane.
+	undistortPoints(observed, normalized, cameraMatrix, distCoeffs);
+	Mat rotation, translation, rotationVector;
+	boardRot64.convertTo(rotationVector, CV_64F);
+	boardTrans64.convertTo(translation, CV_64F);
+	Rodrigues(rotationVector, rotation);
+	Mat inverseRotation = rotation.t();
+	Mat cameraOriginInBoard = inverseRotation * translation;
+	vector<Point3f> reconstructed;
+	for (const auto& point : normalized) {
+		Mat ray = (Mat_<double>(3, 1) << point.x, point.y, 1.0);
+		Mat boardRay = inverseRotation * ray;
+		const double denominator = boardRay.at<double>(2);
+		if (!std::isfinite(denominator) || std::abs(denominator) < 1e-10) return false;
+		const double scale = cameraOriginInBoard.at<double>(2) / denominator;
+		Mat boardPoint = scale * boardRay - cameraOriginInBoard;
+		if (!std::isfinite(scale) || scale <= 0 || !checkRange(boardPoint)) return false;
+		reconstructed.emplace_back(static_cast<float>(boardPoint.at<double>(0)),
+			static_cast<float>(boardPoint.at<double>(1)), 0.0f);
 	}
-	else
-	{
-		Mat imgPt_h = Mat::zeros(3, imgPt.size(), CV_32F);
-		for (int h = 0; h < imgPt.size(); ++h) {
-			imgPt_h.at<float>(0, h) = imgPt[h].x;
-			imgPt_h.at<float>(1, h) = imgPt[h].y;
-			imgPt_h.at<float>(2, h) = 1.0f;
-		}
-		Mat Kinv64 = cameraMatrix.inv();
-		Mat Kinv, boardRot, boardTrans;
-		Kinv64.convertTo(Kinv, CV_32F);
-		boardRot64.convertTo(boardRot, CV_32F);
-		boardTrans64.convertTo(boardTrans, CV_32F);
-
-		// Transform all image points to world points in camera reference frame
-		// and then into the plane reference frame
-		Mat worldImgPt = Mat::zeros(3, imgPt.size(), CV_32F);
-		Mat rot3x3;
-		Rodrigues(boardRot, rot3x3);
-
-		Mat transPlaneToCam = rot3x3.inv()*boardTrans;
-
-		for (int i = 0; i < imgPt.size(); ++i) {
-			Mat col = imgPt_h.col(i);
-			Mat worldPtcam = Kinv * col;
-			Mat worldPtPlane = rot3x3.inv()*(worldPtcam);
-
-			float scale = transPlaneToCam.at<float>(2) / worldPtPlane.at<float>(2);
-			Mat worldPtPlaneReproject = scale * worldPtPlane - transPlaneToCam;
-
-			Point3f pt;
-			pt.x = worldPtPlaneReproject.at<float>(0);
-			pt.y = worldPtPlaneReproject.at<float>(1);
-			pt.z = 0;
-			worldPt.push_back(pt);
-		}
-	}
+	worldPt.insert(worldPt.end(), reconstructed.begin(), reconstructed.end());
 	return true;
 }
 
 void Tinker::camera_calibration::load_camera_matrix(string fileName)
 {
-
 	// check for previous calibration files with the same file name
 	struct stat buffer;
 	bool found = stat(fileName.c_str(), &buffer) == 0;
 	cout << "Camera calibration file exists : " << found << endl;
-	if (found) {
-		camera_is_calibrated = true;
-		FileStorage fs(fileName, FileStorage::READ);
-		fs["camera_matrix"] >> cameraMatrix;
-		fs["distortion_coefficients"] >> distCoeffs;
+	camera_is_calibrated = false;
+	cameraMatrix.release();
+	distCoeffs.release();
+	if (!found) return;
+
+	FileStorage fs(fileName, FileStorage::READ);
+	if (!fs.isOpened()) {
+		cout << "Camera calibration load rejected: file could not be opened." << endl;
+		return;
 	}
+	int savedWidth=0,savedHeight=0;
+	fs["image_width"] >> savedWidth;
+	fs["image_height"] >> savedHeight;
+	if (imageSize.width>0 && imageSize.height>0 &&
+		(savedWidth!=imageSize.width || savedHeight!=imageSize.height)) {
+		cout << "Camera calibration load rejected: saved image size " << savedWidth << 'x' << savedHeight
+			<< " does not match live capture " << imageSize.width << 'x' << imageSize.height
+			<< "; collect a fresh camera calibration." << endl;
+		return;
+	}
+	Mat loadedMatrix,loadedDistortion;
+	fs["camera_matrix"] >> loadedMatrix;
+	fs["distortion_coefficients"] >> loadedDistortion;
+	if (loadedMatrix.rows!=3 || loadedMatrix.cols!=3 || loadedDistortion.empty() ||
+		!checkRange(loadedMatrix) || !checkRange(loadedDistortion)) {
+		cout << "Camera calibration load rejected: intrinsic parameters are missing or invalid." << endl;
+		return;
+	}
+	loadedMatrix.convertTo(loadedMatrix,CV_64F);
+	loadedDistortion.convertTo(loadedDistortion,CV_64F);
+	if (loadedMatrix.at<double>(0,0)<=0 || loadedMatrix.at<double>(1,1)<=0) {
+		cout << "Camera calibration load rejected: focal lengths must be positive." << endl;
+		return;
+	}
+	cameraMatrix=loadedMatrix;
+	distCoeffs=loadedDistortion;
+	camera_is_calibrated = true;
 }
 
 double Tinker::camera_calibration::computeReprojectionErrors(const vector<vector<Point3f>>& objectPoints, const vector<vector<Point2f>>& imagePoints, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const Mat & cameraMatrix, const Mat & distCoeffs, vector<float>& perViewErrors)
@@ -242,7 +358,10 @@ void Tinker::camera_calibration::calcChessboardCorners(Size boardSize, float squ
 	}
 }
 
-bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, int flags, Mat & cameraMatrix, Mat & distCoeffs, vector<Mat>& rvecs, vector<Mat>& tvecs, vector<float>& reprojErrs, double & totalAvgErr)
+bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoints, 
+	Size imageSize, Size boardSize, Pattern patternType, float squareSize, 
+	float aspectRatio, int flags, Mat & cameraMatrix, Mat & distCoeffs, 
+	vector<Mat>& rvecs, vector<Mat>& tvecs, vector<float>& perViewRms, double & totalAvgErr)
 {
 	cameraMatrix = Mat::eye(3, 3, CV_64F);
 	if (flags & CALIB_FIX_ASPECT_RATIO)
@@ -257,15 +376,14 @@ bool Tinker::camera_calibration::runCalibration(vector<vector<Point2f>> imagePoi
 
 	double rms = calibrateCamera(objectPoints, imagePoints, imageSize, cameraMatrix,
 		distCoeffs, rvecs, tvecs, flags | CALIB_FIX_K4 | CALIB_FIX_K5);
-	///*|CALIB_FIX_K3*/|CALIB_FIX_K4|CALIB_FIX_K5);
 	printf("RMS error reported by calibrateCamera: %g\n", rms);
 
-	bool ok = checkRange(cameraMatrix) && checkRange(distCoeffs);
+	bool matricesValid = checkRange(cameraMatrix) && checkRange(distCoeffs);
 
 	totalAvgErr = computeReprojectionErrors(objectPoints, imagePoints,
-		rvecs, tvecs, cameraMatrix, distCoeffs, reprojErrs);
+		rvecs, tvecs, cameraMatrix, distCoeffs, perViewRms);
 
-	return ok;
+	return matricesValid;
 }
 
 void Tinker::camera_calibration::saveCameraParams(const string & filename, Size imageSize, Size boardSize, float squareSize, float aspectRatio, int flags, const Mat & cameraMatrix, const Mat & distCoeffs, const vector<Mat>& rvecs, const vector<Mat>& tvecs, const vector<float>& reprojErrs, const vector<vector<Point2f>>& imagePoints, double totalAvgErr)
@@ -340,30 +458,4 @@ void Tinker::camera_calibration::saveCameraParams(const string & filename, Size 
 		}
 		fs << "image_points" << imagePtMat;
 	}
-}
-
-bool Tinker::camera_calibration::runAndSave(const string & outputFilename, const vector<vector<Point2f>>& imagePoints, Size imageSize, Size boardSize, Pattern patternType, float squareSize, float aspectRatio, int flags, Mat & _cameraMatrix, Mat & distCoeffs, bool writeExtrinsics, bool writePoints)
-{
-	vector<Mat> rvecs, tvecs;
-	vector<float> reprojErrs;
-	double totalAvgErr = 0;
-
-	bool ok = runCalibration(imagePoints, imageSize, boardSize, patternType, squareSize,
-		aspectRatio, flags, _cameraMatrix, distCoeffs,
-		rvecs, tvecs, reprojErrs, totalAvgErr);
-	printf("%s. avg reprojection error = %.2f\n",
-		ok ? "Calibration succeeded" : "Calibration failed",
-		totalAvgErr);
-
-	if (ok) {
-		saveCameraParams(outputFilename, imageSize,
-			boardSize, squareSize, aspectRatio,
-			flags, _cameraMatrix, distCoeffs,
-			writeExtrinsics ? rvecs : vector<Mat>(),
-			writeExtrinsics ? tvecs : vector<Mat>(),
-			writeExtrinsics ? reprojErrs : vector<float>(),
-			writePoints ? imagePoints : vector<vector<Point2f> >(),
-			totalAvgErr);
-	}
-	return ok;
 }

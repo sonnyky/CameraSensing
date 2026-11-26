@@ -1,10 +1,42 @@
-﻿#include "include\calibration.hpp"
+#include "include\calibration.hpp"
+#include <cmath>
+#include <limits>
+#include <algorithm>
+#include <stdexcept>
+#include "flags.hpp"
+#include "projector_circle_detection.hpp"
+#include "projector_projection_bounds.hpp"
+#include <sstream>
+#include "stereo_fit_validation.hpp"
+#include "projection_region_layout.hpp"
+#include "projector_distortion_validation.hpp"
+#include "shared_pose_smoothing.hpp"
+#include "gray_code_calibration.hpp"
 
-Tinker::calibration::calibration() :
-	min_images_diff(4.0),
-	min_elapsed_time(2.0),
-	diff_mean(0.0),
-	elapsed_time(0.0)
+namespace {
+void draw_wrapped_status(cv::Mat& image, const std::string& message, const cv::Scalar& color)
+{
+	if (image.empty() || message.empty()) return;
+	const int margin=10, maxWidth=std::max(1,image.cols-2*margin);
+	const double scale=0.5;
+	const int thickness=1, lineHeight=20;
+	std::istringstream words(message);
+	std::string word,line;
+	int baseline=25;
+	auto drawLine=[&]() {
+		if (!line.empty()) cv::putText(image,line,cv::Point(margin,baseline),cv::FONT_HERSHEY_SIMPLEX,scale,color,thickness,cv::LINE_AA);
+		line.clear(); baseline+=lineHeight;
+	};
+	while (words >> word) {
+		const std::string candidate=line.empty() ? word : line+' '+word;
+		if (!line.empty() && cv::getTextSize(candidate,cv::FONT_HERSHEY_SIMPLEX,scale,thickness,nullptr).width>maxWidth) drawLine();
+		line=line.empty() ? word : line+' '+word;
+	}
+	drawLine();
+}
+}
+
+Tinker::calibration::calibration()
 {
 	camera_is_calibrated = false;
 }
@@ -13,34 +45,20 @@ Tinker::calibration::~calibration()
 {
 }
 
-void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, Size imageSize_, string pattern_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, bool writePoints_, bool writeExtrinsics_, int cameraId_, string outputFileName_)
+void Tinker::calibration::setup_camera_calibration_parameters(Size boardSize_, Size imageSize_, float squareSize_, float aspectRatio_, int nFrames_, int delay_, int mode_, int cameraId_, string outputFileName_)
 {
 	camera_calibrator.setup_parameters(
 		boardSize_,
 		imageSize_,
-		pattern_,
 		squareSize_,
 		aspectRatio_,
 		nFrames_,
-		delay_,
 		mode_,
-		writePoints_,
-		writeExtrinsics_,
 		cameraId_,
 		outputFileName_
 	);
-	last_frame_time = system_clock::now();
+	minimum_sample_interval = std::chrono::milliseconds(delay_);
 	camera_calibrator.setup_candidate_object_points();
-
-	// check for previous calibration files with the same file name
-	struct stat buffer;
-	bool fileFound = stat(outputFileName_.c_str(), &buffer) == 0;
-	cout << "Camera calibration file exists : " << fileFound << endl;
-	if (fileFound) {
-		camera_is_calibrated = true;
-		FileStorage fs(outputFileName_, FileStorage::READ);
-		fs["camera_matrix"] >> camera_matrix;
-	}
 }
 
 void Tinker::calibration::setup_projector_calibration_parameters(
@@ -49,13 +67,15 @@ void Tinker::calibration::setup_projector_calibration_parameters(
 	Size _patternSize, 
 	float _squareSize, 
 	int _nFramesBeforeDynamicProjectorCalib, 
-	int _nFramesTotalProjectorCalib,
+	int _nFramesDynamicProjectorCalib,
 	Pattern _patternType, 
 	float px, 
 	float py
 )
 {
-	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _nFramesBeforeDynamicProjectorCalib, _nFramesTotalProjectorCalib, _patternType, px, py);
+	projector_calibrator.setup_projector_parameters(_imageSize, _outputFileName, _patternSize, _squareSize, _nFramesBeforeDynamicProjectorCalib, _patternType, px, py);
+	projector_output_filename = _outputFileName;
+	required_dynamic_projector_samples = static_cast<uint64_t>(_nFramesDynamicProjectorCalib);
 }
 
 void Tinker::calibration::set_projector_static_image_points()
@@ -63,14 +83,222 @@ void Tinker::calibration::set_projector_static_image_points()
 	projector_calibrator.set_static_candidate_image_points();
 }
 
-bool Tinker::calibration::calibrate_camera(Mat image)
+void Tinker::calibration::reset_static_gray_code(Mat& projectorImage)
 {
-	if (!accept_new_frame(image)) {
+	static_gray_patterns=make_gray_code_patterns(projector_calibrator.get_image_size(),
+		static_cast<int>(FLAGS_static_gray_projector_block_size),static_cast<int>(FLAGS_static_gray_phase_period_px));
+	if (static_gray_patterns.empty()) throw std::runtime_error("Unable to generate static projector Gray-code patterns.");
+	static_gray_captures.clear();
+	static_gray_capture_index=0;
+	static_gray_initial_board_points.clear();
+	static_gray_camera_samples.clear();
+	static_gray_board_samples.clear();
+	static_gray_board_rotation.release();
+	static_gray_board_translation.release();
+	static_gray_initialized=true;
+	static_gray_capture_armed=false;
+	projectorImage=static_gray_patterns.front().clone();
+	cout << "Static Gray-code calibration ready: " << static_gray_patterns.size()
+		<< " reference/code frames plus one final motion-check frame per board position. "
+		<< "Show the complete checkerboard and ID " << FLAGS_board_origin_aruco_id
+		<< ", finish propping the board, then press SPACE or ENTER to start." << endl;
+}
+
+void Tinker::calibration::request_static_gray_capture()
+{
+	if (!static_gray_initialized || static_gray_capture_index!=0 || static_gray_capture_armed) return;
+	static_gray_capture_armed=true;
+	last_projector_capture_rejection.clear();
+	cout << "Static Gray/phase capture armed; validating the board pose before starting." << endl;
+}
+
+bool Tinker::calibration::process_static_gray_code_frame(const Mat& image,Mat& projectorImage)
+{
+	if (!static_gray_initialized) {
+		reset_static_gray_code(projectorImage);
 		return false;
 	}
-	else {
-		return camera_calibrator.calibrate(image);
+	if (image.empty()) return false;
+	Mat gray;
+	if (image.channels()==3) cvtColor(image,gray,COLOR_BGR2GRAY); else gray=image.clone();
+
+	// Index zero is the black reference frame. Acquire the board pose only on
+	// this clean image, before any Gray-code illumination can obscure corners.
+	if (static_gray_capture_index==0) {
+		if (!camera_calibrator.find_board(image)) {
+			static_gray_capture_armed=false;
+			report_projector_capture_rejection("Static Gray code waiting for a complete checkerboard and ID " +
+				std::to_string(FLAGS_board_origin_aruco_id) + ": " + camera_calibrator.get_orientation_status());
+			projectorImage=static_gray_patterns.front().clone();
+			return false;
+		}
+		const auto boardPoints=camera_calibrator.get_detected_board_points();
+		if (!static_gray_capture_armed) {
+			report_projector_capture_rejection("Static Gray/phase ready; finish propping the board, then press SPACE or ENTER to start one sequence");
+			projectorImage=static_gray_patterns.front().clone();
+			return false;
+		}
+		if (static_gray_waiting_for_pose_change) {
+			double squaredMovement=0;
+			if (boardPoints.size()!=static_gray_last_failed_board_points.size()) squaredMovement=std::numeric_limits<double>::infinity();
+			else for (size_t index=0;index<boardPoints.size();++index) {
+				const Point2f delta=boardPoints[index]-static_gray_last_failed_board_points[index];
+				squaredMovement+=delta.dot(delta);
+			}
+			const double movementRms=std::sqrt(squaredMovement/std::max<size_t>(1,boardPoints.size()));
+			if (!std::isfinite(movementRms) || movementRms<FLAGS_minimum_board_motion_px) {
+				static_gray_capture_armed=false;
+				report_projector_capture_rejection("Static Gray/phase capture PAUSED after two zero-phase sequences; move the checkerboard to a different pose to retry");
+				projectorImage=static_gray_patterns.front().clone();
+				return false;
+			}
+			cout << "Static Gray/phase capture resumed after checkerboard movement=" << movementRms << " px." << endl;
+			static_gray_waiting_for_pose_change=false;
+			static_gray_consecutive_zero_phase_failures=0;
+		}
+		string rejection;
+		if (!should_accept_board_sample(boardPoints,&rejection)) {
+			static_gray_capture_armed=false;
+			report_projector_capture_rejection("Static Gray code: " + rejection +
+				". Move the checkerboard to a different position, then hold it still.");
+			projectorImage=static_gray_patterns.front().clone();
+			return false;
+		}
+		static_gray_initial_board_points=boardPoints;
+		camera_calibrator.compute_candidate_board_pose(boardPoints,static_gray_board_rotation,static_gray_board_translation);
+		const auto boardObjects=camera_calibrator.get_candidate_object_points();
+		const Size boardSize=camera_calibrator.get_board_size();
+		if (boardObjects.size()<static_cast<size_t>(boardSize.width+1)) {
+			static_gray_capture_armed=false;
+			report_projector_capture_rejection("Static Gray code: checkerboard object model is incomplete");
+			return false;
+		}
+		const Point3f axisX=boardObjects[1]-boardObjects[0];
+		const Point3f axisY=boardObjects[boardSize.width]-boardObjects[0];
+		static_gray_board_samples.clear();
+		for (int squareY=0;squareY<=boardSize.height;++squareY) for (int squareX=0;squareX<=boardSize.width;++squareX)
+			static_gray_board_samples.push_back(boardObjects[0]+axisX*(squareX-0.5f)+axisY*(squareY-0.5f));
+		projectPoints(static_gray_board_samples,static_gray_board_rotation,static_gray_board_translation,
+			camera_calibrator.get_camera_matrix(),camera_calibrator.get_dist_coeffs(),static_gray_camera_samples);
+		static_gray_captures.clear();
+		static_gray_captures.push_back(gray);
+		static_gray_capture_index=1;
+		static_gray_capture_armed=false;
+		projectorImage=static_gray_patterns[1].clone();
+		cout << "Static Gray code: board pose accepted. HOLD THE CHECKERBOARD STILL for "
+			<< static_gray_patterns.size()-1 << " code frames and the final motion check." << endl;
+		return false;
 	}
+
+	// Capture the currently displayed white/Gray/inverse frame and queue the next.
+	if (static_gray_capture_index<static_gray_patterns.size()) {
+		static_gray_captures.push_back(gray);
+		++static_gray_capture_index;
+		if (static_gray_capture_index<static_gray_patterns.size())
+			projectorImage=static_gray_patterns[static_gray_capture_index].clone();
+		else {
+			projectorImage=static_gray_patterns.front().clone();
+			cout << "Static Gray code: sequence captured; checking whether the board remained static." << endl;
+		}
+		return false;
+	}
+
+	// The final displayed frame is black again. Re-detect the board and reject
+	// the entire sequence if it moved while the code frames were captured.
+	if (!camera_calibrator.find_board(image)) {
+		cout << "Static Gray-code sample rejected: BOARD NOT STATIC ENOUGH or no longer fully visible; "
+			<< "return to a stable complete-board pose and hold still." << endl;
+		reset_static_gray_code(projectorImage);
+		return false;
+	}
+	const auto finalBoardPoints=camera_calibrator.get_detected_board_points();
+	double squaredMotion=0;
+	if (finalBoardPoints.size()!=static_gray_initial_board_points.size()) squaredMotion=std::numeric_limits<double>::infinity();
+	else for (size_t i=0;i<finalBoardPoints.size();++i) {
+		const Point2f delta=finalBoardPoints[i]-static_gray_initial_board_points[i];
+		squaredMotion+=delta.dot(delta);
+	}
+	const double motionRms=std::sqrt(squaredMotion/std::max<size_t>(1,finalBoardPoints.size()));
+	if (!std::isfinite(motionRms) || motionRms>FLAGS_static_gray_max_board_motion_px) {
+		cout << "Static Gray-code sample rejected: BOARD NOT STATIC ENOUGH; corner RMS motion=" << motionRms
+			<< " px > " << FLAGS_static_gray_max_board_motion_px << " px. Hold still for the complete sequence." << endl;
+		reset_static_gray_code(projectorImage);
+		return false;
+	}
+
+	vector<Point2f> projectorPoints,cameraPoints;
+	vector<Point3f> objectPoints;
+	Mat debugImage;
+	string decodeReason;
+	GrayCodeDecodeDiagnostics decodeDiagnostics;
+	const bool decoded=decode_gray_code_samples(static_gray_captures,projector_calibrator.get_image_size(),
+		static_cast<int>(FLAGS_static_gray_projector_block_size),
+		static_cast<int>(FLAGS_static_gray_phase_period_px),
+		static_gray_camera_samples,static_gray_board_samples,
+		FLAGS_static_gray_min_direct_contrast,FLAGS_static_gray_min_bit_contrast,
+		static_cast<int>(FLAGS_static_gray_sample_radius_px),projectorPoints,cameraPoints,objectPoints,&debugImage,decodeReason,
+		&decodeDiagnostics);
+	putText(debugImage,decodeReason,Point(10,25),FONT_HERSHEY_SIMPLEX,0.6,decoded ? Scalar(0,255,0) : Scalar(0,0,255),2,LINE_AA);
+	imshow("ImageThresholded",debugImage);
+	if (!decoded) {
+		cout << "Static Gray-code sample rejected: " << decodeReason
+			<< ". Keep exposure fixed, improve projector contrast and hold the board still." << endl;
+		if (decodeDiagnostics.phaseValid==0) {
+			++static_gray_consecutive_zero_phase_failures;
+			if (static_gray_consecutive_zero_phase_failures>=2) {
+				static_gray_waiting_for_pose_change=true;
+				static_gray_last_failed_board_points=static_gray_initial_board_points;
+				cout << "Static Gray/phase capture PAUSED after two consecutive zero-phase sequences. "
+					<< "Move the checkerboard by at least " << FLAGS_minimum_board_motion_px << " px RMS to retry." << endl;
+			}
+		}
+		else static_gray_consecutive_zero_phase_failures=0;
+		reset_static_gray_code(projectorImage);
+		return false;
+	}
+	static_gray_consecutive_zero_phase_failures=0;
+	static_gray_waiting_for_pose_change=false;
+	static_gray_last_failed_board_points.clear();
+
+	projector_calibrator.imagePoints.push_back(projectorPoints);
+	projector_calibrator.objectPoints.push_back(objectPoints);
+	projector_calibrator.frameMeasuredCircleImagePoints.push_back(cameraPoints);
+	projector_calibrator.frameMeasuredBoardImagePoints.push_back(static_gray_initial_board_points);
+	projector_calibrator.camBoardRotations.push_back(static_gray_board_rotation.clone());
+	projector_calibrator.camBoardTranslations.push_back(static_gray_board_translation.clone());
+	camera_calibrator.imagePointsCamObj.push_back(cameraPoints);
+	camera_calibrator.get_object_points().push_back(objectPoints);
+	camera_calibrator.boardRotations.push_back(static_gray_board_rotation.clone());
+	camera_calibrator.boardTranslations.push_back(static_gray_board_translation.clone());
+	commit_accepted_board_sample(static_gray_initial_board_points);
+	last_projector_capture_rejection.clear();
+	cout << "Static Gray-code view " << projector_calibrator.imagePoints.size() << " accepted: " << decodeReason << '.' << endl;
+
+	const bool projectorReady=projector_calibrator.calibrate(camera_calibrator.get_image_size());
+	if (projectorReady && stereo_calibrate()) {
+		cout << "FINISHED WITH STATIC PROJECTOR CALIBRATION. The initial projector and stereo models are ready." << endl;
+		return true;
+	}
+	cout << "READY TO MOVE THE CHECKERBOARD TO A DIFFERENT POSITION. Vary position, distance and tilt; "
+		<< "then hold it still when the next Gray-code sequence starts." << endl;
+	reset_static_gray_code(projectorImage);
+	return false;
+}
+
+bool Tinker::calibration::calibrate_camera(Mat image)
+{
+	if (!camera_calibrator.find_board(image)) {
+		return false;
+	}
+
+	const auto boardPoints = camera_calibrator.get_detected_board_points();
+	if (!should_accept_board_sample(boardPoints)) {
+		return false;
+	}
+
+	const bool calibrationComplete = camera_calibrator.calibrate(image, boardPoints);
+	commit_accepted_board_sample(boardPoints);
+	return calibrationComplete;
 }
 
 void Tinker::calibration::switch_to_calibration_mode()
@@ -78,62 +306,168 @@ void Tinker::calibration::switch_to_calibration_mode()
 	camera_calibrator.set_to_calibration_mode();
 }
 
-void Tinker::calibration::load(string cameraConfig, string projectorConfig, string extrinsicsConfig)
+Tinker::CalibrationReuseStage Tinker::calibration::load_saved_calibration(const string& projectorConfig)
 {
-	camera_calibrator.load(cameraConfig);
-	projector_calibrator.load(projectorConfig);
-	loadExtrinsics(extrinsicsConfig);
+	if (!camera_calibrator.is_calibrated()) {
+		cout << "Calibration reuse: no valid camera calibration; starting camera calibration." << endl;
+		return CalibrationReuseStage::None;
+	}
+	cv::FileStorage fs(projectorConfig,cv::FileStorage::READ);
+	if (!fs.isOpened()) {
+		cout << "Calibration reuse: camera calibration loaded, but no projector calibration is available." << endl;
+		return CalibrationReuseStage::CameraOnly;
+	}
+	const bool hasFinal=!fs["Rotation_Vector"].empty() && !fs["Translation_Vector"].empty();
+	const bool hasStatic=!fs["static_Rotation_Vector"].empty() && !fs["static_Translation_Vector"].empty();
+	if (!hasFinal && !hasStatic) {
+		cout << "Calibration reuse: projector file has no saved stereo transform; redoing static projector calibration." << endl;
+		return CalibrationReuseStage::CameraOnly;
+	}
+	if (!projector_calibrator.load(projectorConfig)) {
+		cout << "Calibration reuse: projector intrinsics are incompatible; redoing static projector calibration." << endl;
+		return CalibrationReuseStage::CameraOnly;
+	}
+	const string prefix=hasFinal ? "" : "static_";
+	fs[prefix+"Rotation_Vector"] >> rotCamToProj;
+	fs[prefix+"Translation_Vector"] >> transCamToProj;
+	fs[prefix+"stereo_rms_error"] >> last_dynamic_stereo_rms;
+	if (rotCamToProj.total()!=3 || transCamToProj.total()!=3 || !checkRange(rotCamToProj) || !checkRange(transCamToProj)) {
+		rotCamToProj.release(); transCamToProj.release();
+		cout << "Calibration reuse: saved stereo transform is invalid; redoing static projector calibration." << endl;
+		return CalibrationReuseStage::CameraOnly;
+	}
+	rotCamToProj.convertTo(rotCamToProj,CV_64F);
+	transCamToProj.convertTo(transCamToProj,CV_64F);
+	rotCamToProj=rotCamToProj.reshape(1,3).clone();
+	transCamToProj=transCamToProj.reshape(1,3).clone();
+	if (!std::isfinite(last_dynamic_stereo_rms)) last_dynamic_stereo_rms=0.0;
+	if (hasFinal) {
+		cout << "Calibration reuse: loaded final camera/projector calibration; entering tracking." << endl;
+		return CalibrationReuseStage::Complete;
+	}
+	cout << "Calibration reuse: loaded static projector calibration; resuming dynamic calibration." << endl;
+	return CalibrationReuseStage::StaticProjector;
 }
 
-bool Tinker::calibration::accept_new_frame(cv::Mat camMat)
+bool Tinker::calibration::should_accept_board_sample(const vector<Point2f>& boardPoints, string* rejectionReason) const
 {
-	if (prev_camera_frame.empty()) {
-		camMat.copyTo(prev_camera_frame);
-		last_frame_time = std::chrono::system_clock::now();
-		std::cout << "first frame" << std::endl;
-		return false;  // Do not accept the first frame
+	auto reject = [rejectionReason](const string& reason) {
+		if (rejectionReason) *rejectionReason = reason;
+		return false;
+	};
+	if (boardPoints.empty()) {
+		return reject("chessboard corners missing");
 	}
 
-	cv::Mat diffMat;
-	cv::absdiff(prev_camera_frame, camMat, diffMat);
-
-	cv::Scalar m = mean(diffMat);  // (meanB, meanG, meanR)
-	double diff_mean = (m[0] + m[1] + m[2]) / 3.0;
-
-	camMat.copyTo(prev_camera_frame);
-
-	using namespace std::chrono;
-	std::chrono::time_point<system_clock> latest_frame_time = system_clock::now();
-	duration<double> elapsed_seconds = latest_frame_time - last_frame_time;
-
-	//cout << "diff mean: " << diff_mean  << endl;
-	double elapsed = elapsed_seconds.count();
-	//cout << "elapsed: " << elapsed << endl;
-
-	if ((elapsed > min_elapsed_time) && (diff_mean > min_images_diff)) {
-		camMat.copyTo(prev_camera_frame);
-		last_frame_time = latest_frame_time;
+	if (!has_accepted_board_sample) {
 		return true;
 	}
 
-	return false;
+	const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+		steady_clock::now() - last_accepted_sample_time).count();
+	if (elapsed < minimum_sample_interval.count()) {
+		return reject("waiting for --delay_between_frames interval; hold the board steady");
+	}
+	if (boardPoints.size() != last_accepted_board_points.size()) {
+		return reject("chessboard corner count changed");
+	}
+
+	double sumSquaredDisplacement = 0.0;
+	for (size_t i = 0; i < boardPoints.size(); ++i) {
+		const cv::Point2f displacement = boardPoints[i] - last_accepted_board_points[i];
+		sumSquaredDisplacement += displacement.dot(displacement);
+	}
+
+	const double rmsDisplacement = std::sqrt(sumSquaredDisplacement / boardPoints.size());
+	if (rmsDisplacement < FLAGS_minimum_board_motion_px) {
+		return reject("insufficient chessboard movement: " + std::to_string(rmsDisplacement) +
+			" px < " + std::to_string(FLAGS_minimum_board_motion_px) + " px; move or tilt the board");
+	}
+	return true;
 }
 
-void Tinker::calibration::loadExtrinsics(string filename, bool absolute)
+void Tinker::calibration::report_projector_capture_rejection(const string& reason)
 {
-	cv::FileStorage fs(filename, cv::FileStorage::READ);
-	fs["Rotation_Vector"] >> rotCamToProj;
-	fs["Translation_Vector"] >> transCamToProj;
+	const auto now = steady_clock::now();
+	// Throttle all failures, including changing numerical values, to avoid per-frame spam.
+	if (last_projector_capture_rejection.empty() || now - last_projector_rejection_time >= std::chrono::seconds(2)) {
+		cout << "Projector sample not captured: " << reason << endl;
+		last_projector_rejection_time = now;
+	}
+	last_projector_capture_rejection = reason;
+}
+
+void Tinker::calibration::commit_accepted_board_sample(const vector<Point2f>& boardPoints)
+{
+	last_accepted_board_points = boardPoints;
+	last_accepted_sample_time = steady_clock::now();
+	has_accepted_board_sample = true;
+}
+
+void Tinker::calibration::report_projector_projection_issue(const string& reason, bool blanked, const string& category)
+{
+	const auto now = steady_clock::now();
+	if (last_projector_projection_issue.empty() || blanked != last_projector_projection_issue_blanked ||
+		category != last_projector_projection_issue_category ||
+		now - last_projector_projection_issue_time >= std::chrono::seconds(2)) {
+		cout << (blanked ? "Projector projection blanked: " : "Projector projection bounds warning: ") << reason << endl;
+		last_projector_projection_issue_time = now;
+	}
+	last_projector_projection_issue = reason;
+	last_projector_projection_issue_blanked = blanked;
+	last_projector_projection_issue_category = category;
+}
+
+void Tinker::calibration::reset_sample_capture_gate()
+{
+	last_accepted_board_points.clear();
+	has_accepted_board_sample = false;
+	last_projector_capture_rejection.clear();
 }
 
 // obtains points in the projector image coordinates that correspond to points in real world coordinates. This can be used as a measure of accuracy of projected points?
-vector<Point2f> Tinker::calibration::get_projected(const vector<Point3f>& pts, const cv::Mat & rotObjToCam, const cv::Mat & transObjToCam)
+Tinker::ProjectionResult Tinker::calibration::get_projected(const vector<Point3f>& pts, const cv::Mat & rotObjToCam, const cv::Mat & transObjToCam)
 {
+	ProjectionResult result;
+	result.circles.resize(pts.size());
+	if (pts.empty()) { result.rejectionReason="empty_grid"; return result; }
 	cv::Mat rotObjToProj, transObjToProj;
 
 	cv::composeRT(rotObjToCam, transObjToCam,
 		rotCamToProj, transCamToProj,
 		rotObjToProj, transObjToProj);
+	cv::Mat rotation;
+	cv::Rodrigues(rotObjToProj, rotation);
+	const auto intrinsics = projector_calibrator.get_camera_matrix();
+	double validatedRadius=0;
+	const auto projectorSize=projector_calibrator.get_image_size();
+	for (double x : {0.0,double(projectorSize.width-1)}) for (double y : {0.0,double(projectorSize.height-1)})
+		validatedRadius=std::max(validatedRadius,std::hypot((x-intrinsics.at<double>(0,2))/intrinsics.at<double>(0,0),
+			(y-intrinsics.at<double>(1,2))/intrinsics.at<double>(1,1)));
+	validatedRadius *= 1.25;
+	result.allowedRadius=validatedRadius;
+	for (size_t index=0;index<pts.size();++index) {
+		const auto& point=pts[index];
+		const double depth = rotation.at<double>(2,0)*point.x + rotation.at<double>(2,1)*point.y +
+			rotation.at<double>(2,2)*point.z + transObjToProj.at<double>(2);
+		const double x=rotation.at<double>(0,0)*point.x+rotation.at<double>(0,1)*point.y+
+			rotation.at<double>(0,2)*point.z+transObjToProj.at<double>(0);
+		const double y=rotation.at<double>(1,0)*point.x+rotation.at<double>(1,1)*point.y+
+			rotation.at<double>(1,2)*point.z+transObjToProj.at<double>(1);
+		auto& debug=result.circles[index];
+		debug.projectorMm={x,y,depth};
+		result.offendingCircle=index;
+		if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(depth)) {
+			result.rejectionReason="non_finite_projector_coordinates"; return result;
+		}
+		if (depth <= 1e-6) {
+			result.rejectionReason=depth<=0 ? "non_positive_depth" : "depth_below_minimum"; return result;
+		}
+		debug.normalizedRadius=std::hypot(x/depth,y/depth);
+		if (debug.normalizedRadius>validatedRadius) {
+			result.rejectionReason="outside_distortion_domain"; return result;
+		}
+	}
 
 	vector<Point2f> out;
 	projectPoints(Mat(pts),
@@ -141,27 +475,90 @@ vector<Point2f> Tinker::calibration::get_projected(const vector<Point3f>& pts, c
 		projector_calibrator.get_camera_matrix(),
 		projector_calibrator.get_dist_coeffs(),
 		out);
-	return out;
+	result.points=std::move(out);
+	for (size_t index=0;index<result.points.size();++index) {
+		if (!std::isfinite(result.points[index].x) || !std::isfinite(result.points[index].y)) {
+			result.rejectionReason="non_finite_pixel_projection"; result.offendingCircle=index; return result;
+		}
+	}
+	if (result.points.empty()) result.rejectionReason="empty_grid";
+	return result;
 }
 
-bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
+bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img, bool immediate_update)
 {
 	vector<cv::Point2f> chessImgPts;
 	bool bPrintedPatternFound = camera_calibrator.find_board(img);
 	chessImgPts = camera_calibrator.get_detected_board_points();
+	if (!bPrintedPatternFound) {
+		has_smoothed_dynamic_board_pose = false;
+		smoothed_dynamic_board_rot.release();
+		smoothed_dynamic_board_trans.release();
+		report_projector_projection_issue("chessboard/origin unavailable: " + camera_calibrator.get_orientation_status(), true);
+		return false;
+	}
 
 	if (bPrintedPatternFound) {
+		if (rotCamToProj.empty() || transCamToProj.empty()) {
+			report_projector_projection_issue("camera-to-projector extrinsics are unavailable", true);
+			return false;
+		}
 
-		drawChessboardCorners(img, camera_calibrator.get_board_size(), Mat(chessImgPts), bPrintedPatternFound);
+		if (projector_calibrator.get_camera_matrix().empty() ||
+			projector_calibrator.get_dist_coeffs().empty()) {
+			report_projector_projection_issue("projector intrinsics are unavailable", true);
+			return false;
+		}
 
 		cv::Mat boardRot;
 		cv::Mat boardTrans;
 		camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
+		string distortionReason;
+		if (!valid_projector_distortion(projector_calibrator.get_camera_matrix(), projector_calibrator.get_dist_coeffs(),
+			projector_calibrator.get_image_size(), distortionReason)) {
+			report_projector_projection_issue("invalid projector distortion: " + distortionReason + "; recalibrate", true);
+			return false;
+		}
+
+		// Calibration follows the measured pose immediately; smooth only tracking.
+		const double poseAlpha = FLAGS_projector_smoothing_rate;
+		if (immediate_update || !has_smoothed_dynamic_board_pose) {
+			smoothed_dynamic_board_rot = boardRot.clone();
+			smoothed_dynamic_board_trans = boardTrans.clone();
+			has_smoothed_dynamic_board_pose = true;
+		}
+		else {
+			smooth_shared_board_pose(boardRot, boardTrans, poseAlpha, smoothed_dynamic_board_rot, smoothed_dynamic_board_trans);
+		}
 
 		const auto & camCandObjPts = camera_calibrator.get_candidate_object_points();
 		Point3f axisX = camCandObjPts[1] - camCandObjPts[0];
 		Point3f axisY = camCandObjPts[camera_calibrator.get_board_size().width] - camCandObjPts[0];
-		Point3f pos = camCandObjPts[0] - axisY * (camera_calibrator.get_board_size().width - 2) * 1.3;
+		Point3f pos = camCandObjPts[0];
+		// Placement is identical in calibration and tracking. The phase only
+		// controls smoothing, so entering tracking cannot jump onto the marker.
+		{
+			if (FLAGS_project_grid_inside_checkerboard) {
+				try {
+					pos = centered_checkerboard_grid_origin(camCandObjPts[0], axisX, axisY,
+						camera_calibrator.get_board_size(), projector_calibrator.get_circle_pattern_size());
+				} catch (const std::invalid_argument& error) {
+					report_projector_projection_issue(error.what(), true);
+					return false;
+				}
+			} else if (FLAGS_use_projection_region) {
+				try {
+					pos = centered_projection_grid_origin(camCandObjPts[0], axisX, axisY, projector_calibrator.get_circle_pattern_size(),
+						FLAGS_projection_region_center_x_cm * 10, FLAGS_projection_region_top_cm * 10,
+						FLAGS_projection_region_width_cm * 10, FLAGS_projection_region_height_cm * 10);
+				} catch (const std::invalid_argument& error) {
+					report_projector_projection_issue(error.what(), true);
+					return false;
+				}
+			} else {
+				pos = camCandObjPts[0] + axisY * (camera_calibrator.get_board_size().width - 2) * static_cast<float>(FLAGS_projector_offset_y_scale);
+			}
+		}
 
 		vector<Point3f> auxObjectPoints;
 		for (int i = 0; i < projector_calibrator.get_circle_pattern_size().height; i++) {
@@ -170,48 +567,186 @@ bool Tinker::calibration::set_dynamic_projector_image_points(cv::Mat img)
 			}
 		}
 
-		Mat Rc1, Tc1, Rc1inv, Tc1inv, Rc2, Tc2, Rp1, Tp1, Rp2, Tp2;
-		Rp1 = projector_calibrator.get_board_rotations().back();
-		Tp1 = projector_calibrator.get_board_translations().back();
-		Rc1 = camera_calibrator.get_board_rotations().back();
-		Tc1 = camera_calibrator.get_board_translations().back();
-		Rc2 = boardRot;
-		Tc2 = boardTrans;
-
-		Mat auxRinv = Mat::eye(3, 3, CV_32F);
-		Rodrigues(Rc1, auxRinv);
-		auxRinv = auxRinv.inv();
-		Rodrigues(auxRinv, Rc1inv);
-		Tc1inv = -auxRinv * Tc1;
-		Mat Raux, Taux;
-		composeRT(Rc2, Tc2, Rc1inv, Tc1inv, Raux, Taux);
-		composeRT(Raux, Taux, Rp1, Tp1, Rp2, Tp2);
-
-		vector<Point2f> followingPatternImagePoints;
-		if (projector_calibrator.get_camera_matrix().empty()) {
-			std::cerr << "projector_calibrator get_camera_matrix are empty!" << std::endl;
+		const auto projectionResult = get_projected(
+			auxObjectPoints,
+			smoothed_dynamic_board_rot,
+			smoothed_dynamic_board_trans);
+		const auto& followingPatternImagePoints=projectionResult.points;
+		const auto desiredBounds = projector_projection_bounds(followingPatternImagePoints,
+			projector_calibrator.get_image_size(), static_cast<double>(FLAGS_projected_circle_radius));
+		if (!projectionResult.rejectionReason.empty()) {
+			report_projector_projection_issue(projection_circle_debug(projectionResult,projectionResult.offendingCircle,
+				projector_calibrator.get_circle_pattern_size(),projectionResult.rejectionReason),true,projectionResult.rejectionReason);
+			return false;
 		}
-
-		if (projector_calibrator.get_dist_coeffs().empty()) {
-			std::cerr << "projector_calibrator get_dist_coeffs are empty!" << std::endl;
+		string clippingDebug;
+		for (size_t index=0;index<followingPatternImagePoints.size();++index) {
+			const auto edges=clipped_circle_edges(followingPatternImagePoints[index],projector_calibrator.get_image_size(),
+				static_cast<double>(FLAGS_projected_circle_radius));
+			if (!edges.empty()) {
+				clippingDebug=projection_circle_debug(projectionResult,index,projector_calibrator.get_circle_pattern_size(),"screen_clipping")+
+					"; clipped_edges="+edges+"; circle_radius_px="+std::to_string(FLAGS_projected_circle_radius);
+				break;
+			}
 		}
-		projectPoints(Mat(auxObjectPoints),
-			Rp2, Tp2,
-			projector_calibrator.get_camera_matrix(),
-			projector_calibrator.get_dist_coeffs(),
-			followingPatternImagePoints);
-
+		// Calibration requires a complete detectable grid. Tracking accumulates
+		// no samples and may render the visible portion of a valid projection.
+		if (immediate_update && desiredBounds.fullyVisibleCircles != followingPatternImagePoints.size()) {
+			report_projector_projection_issue("complete grid does not fit the projector image (full circles=" +
+				std::to_string(desiredBounds.fullyVisibleCircles) + "/" + std::to_string(followingPatternImagePoints.size()) +
+				"); " + clippingDebug + "; coordinates are not clamped", true,"screen_clipping");
+			return false;
+		}
+		// Project every circle from one shared pose; no independent point
+		// blending or step cap can deform the grid during tracking.
 		projector_calibrator.set_candidate_image_points(followingPatternImagePoints);
+		const auto& displayedPoints = projector_calibrator.get_candidate_image_points();
+		const auto displayedBounds = projector_projection_bounds(displayedPoints, projector_calibrator.get_image_size(),
+			static_cast<double>(FLAGS_projected_circle_radius));
+		if (desiredBounds.fullyVisibleCircles != followingPatternImagePoints.size() ||
+			displayedBounds.fullyVisibleCircles != displayedPoints.size()) {
+			std::ostringstream message;
+			message << "target full circles=" << desiredBounds.fullyVisibleCircles << "/" << followingPatternImagePoints.size()
+				<< ", target center range X=[" << desiredBounds.minX << "," << desiredBounds.maxX
+				<< "], Y=[" << desiredBounds.minY << "," << desiredBounds.maxY
+				<< "]; " << (immediate_update ? "direct update full circles=" : "smoothed update full circles=")
+				<< displayedBounds.fullyVisibleCircles << "/" << displayedPoints.size()
+				<< ", intersecting circle bounds=" << displayedBounds.intersectingCircles
+				<< "; projector image=" << projector_calibrator.get_image_size().width << "x" << projector_calibrator.get_image_size().height
+				<< "; " << clippingDebug << ". Coordinates are not clamped; check board pose, placement and calibration.";
+			report_projector_projection_issue(message.str(), false,"screen_clipping");
+		}
+		else {
+			last_projector_projection_issue.clear();
+		}
 	}
 	return bPrintedPatternFound;
 }
 
-void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
+bool Tinker::calibration::is_dynamic_projector_calibration_satisfied() const
 {
-	int radius = 20;
+	return dynamic_accepted_samples >= required_dynamic_projector_samples &&
+		last_dynamic_stereo_rms <= FLAGS_max_dynamic_stereo_rms;
+}
+
+void Tinker::calibration::reset_dynamic_projection_priming()
+{
+	dynamic_projection_primed = false;
+	last_projector_projection_issue.clear();
+	has_smoothed_dynamic_board_pose = false;
+	smoothed_dynamic_board_rot.release();
+	smoothed_dynamic_board_trans.release();
+	last_dynamic_stereo_rms = std::numeric_limits<double>::infinity();
+}
+
+bool Tinker::calibration::is_dynamic_projection_primed() const
+{
+	return dynamic_projection_primed;
+}
+
+void Tinker::calibration::set_dynamic_projection_primed(bool primed)
+{
+	dynamic_projection_primed = primed;
+}
+
+void Tinker::calibration::reset_dynamic_calibration_solution()
+{
+	dynamic_calibration_has_solution = false;
+	dynamic_accepted_samples = 0;
+}
+
+void Tinker::calibration::mark_dynamic_calibration_solution()
+{
+	dynamic_calibration_has_solution = true;
+	++dynamic_accepted_samples;
+	std::cout << "Accepted dynamic projector sample "
+		<< dynamic_accepted_samples << "/" << required_dynamic_projector_samples
+		<< std::endl;
+}
+
+bool Tinker::calibration::has_dynamic_calibration_solution() const
+{
+	return dynamic_calibration_has_solution;
+}
+
+void Tinker::calibration::draw_camera_debug(Mat& image)
+{
+	if (!camera_calibrator.find_board(image)) {
+		draw_wrapped_status(image,camera_calibrator.get_orientation_status(),Scalar(0,0,255));
+		return;
+	}
+
+	const auto chessImgPts = camera_calibrator.get_detected_board_points();
+	drawChessboardCorners(image, camera_calibrator.get_board_size(), Mat(chessImgPts), true);
+	cv::circle(image, chessImgPts.front(), 7, Scalar(0, 255, 255), 2);
+	cv::putText(image, "origin (0,0)", chessImgPts.front() + Point2f(5, -8), cv::FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 255), 1);
+	draw_wrapped_status(image,camera_calibrator.get_orientation_status(),Scalar(0,255,255));
+	if (static_gray_initialized && static_gray_capture_index==0 && !static_gray_capture_armed)
+		draw_wrapped_status(image,"Static Gray/phase READY: prop the board, then press SPACE or ENTER",Scalar(0,255,0));
+
+	const cv::Mat cameraMatrix = camera_calibrator.get_camera_matrix();
+	const cv::Mat distCoeffs = camera_calibrator.get_dist_coeffs();
+	if (cameraMatrix.empty() || distCoeffs.empty()) {
+		return;
+	}
+
+	cv::Mat boardRot;
+	cv::Mat boardTrans;
+	camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
+
+	const auto objectPoints = camera_calibrator.get_candidate_object_points();
+	float axisLength = 1.0f;
+	if (objectPoints.size() > 1) {
+		axisLength = static_cast<float>(cv::norm(objectPoints[1] - objectPoints[0]) * 2.0);
+	}
+
+	cv::drawFrameAxes(image, cameraMatrix, distCoeffs, boardRot, boardTrans, axisLength, 2);
+	if (FLAGS_project_grid_inside_checkerboard) {
+		const auto& boardObjects = camera_calibrator.get_candidate_object_points();
+		if (boardObjects.size() >= 2) {
+			const Point3f axisX = boardObjects[1] - boardObjects[0];
+			const Point3f axisY = boardObjects[camera_calibrator.get_board_size().width] - boardObjects[0];
+			const Point3f outerTopLeft = boardObjects[0] - axisX - axisY;
+			vector<Point3f> region = {outerTopLeft,
+				outerTopLeft + axisX * static_cast<float>(camera_calibrator.get_board_size().width + 1),
+				outerTopLeft + axisX * static_cast<float>(camera_calibrator.get_board_size().width + 1) + axisY * static_cast<float>(camera_calibrator.get_board_size().height + 1),
+				outerTopLeft + axisY * static_cast<float>(camera_calibrator.get_board_size().height + 1)};
+			vector<Point2f> regionPixels;
+			cv::projectPoints(region, boardRot, boardTrans, cameraMatrix, distCoeffs, regionPixels);
+			for (size_t index = 0; index < regionPixels.size(); ++index) {
+				const auto& a = regionPixels[index]; const auto& b = regionPixels[(index + 1) % regionPixels.size()];
+				if (std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(b.x) && std::isfinite(b.y) &&
+					cv::norm(a) < 1e6 && cv::norm(b) < 1e6) cv::line(image, a, b, Scalar(255, 255, 0), 2);
+			}
+		}
+	}
+	else if (FLAGS_use_projection_region) {
+		const float left = static_cast<float>((FLAGS_projection_region_center_x_cm - FLAGS_projection_region_width_cm / 2) * 10);
+		const float right = left + static_cast<float>(FLAGS_projection_region_width_cm * 10);
+		const float top = static_cast<float>(FLAGS_projection_region_top_cm * 10);
+		const float bottom = top + static_cast<float>(FLAGS_projection_region_height_cm * 10);
+		vector<Point3f> region = {{left, top, 0}, {right, top, 0}, {right, bottom, 0}, {left, bottom, 0}};
+		vector<Point2f> regionPixels;
+		cv::projectPoints(region, boardRot, boardTrans, cameraMatrix, distCoeffs, regionPixels);
+		for (size_t index = 0; index < regionPixels.size(); ++index) {
+			const auto& a = regionPixels[index]; const auto& b = regionPixels[(index + 1) % regionPixels.size()];
+			if (std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(b.x) && std::isfinite(b.y) &&
+				cv::norm(a) < 1e6 && cv::norm(b) < 1e6) cv::line(image, a, b, Scalar(255, 255, 0), 2);
+		}
+	}
+}
+
+void Tinker::calibration::draw_projector_pattern(Mat& projectorImage)
+{
+	int radius = static_cast<int>(FLAGS_projected_circle_radius);
 	projectorImage = cv::Mat::zeros(projectorImage.size(), projectorImage.type());
 	vector<Point2f> points = projector_calibrator.get_candidate_image_points();
 	for (int i = 0; i < points.size(); i++) {
+		if (!std::isfinite(points[i].x) || !std::isfinite(points[i].y) ||
+			points[i].x + radius < 0 || points[i].y + radius < 0 ||
+			points[i].x - radius >= projectorImage.cols || points[i].y - radius >= projectorImage.rows) {
+			continue; // Do not convert non-finite or wholly off-image centers to integer pixels.
+		}
 		circle(projectorImage, points[i], radius, Scalar(255, 255, 255), -1, 8, 0);
 	}
 	
@@ -219,62 +754,86 @@ void Tinker::calibration::draw_projector_pattern(Mat image, Mat projectorImage)
 
 Mat Tinker::calibration::process_image_for_circle_detection(Mat img)
 {
-	Mat thresholdedImage;
-	if (img.type() != CV_8UC1) {
-		cvtColor(img, thresholdedImage, COLOR_RGB2GRAY);
-	}
-	else {
-		img.copyTo(thresholdedImage);
-	}
-	cv::threshold(thresholdedImage, thresholdedImage, 210, 255, cv::THRESH_BINARY_INV);
-	return thresholdedImage;
+	return threshold_projector_circles(img);
+}
+
+void Tinker::calibration::record_displayed_projector_pattern(bool hasPattern)
+{
+	displayed_projector_pattern.record(projector_calibrator.get_candidate_image_points(), hasPattern);
 }
 
 bool Tinker::calibration::calibrate_projector(Mat img)
 {
-	if (!accept_new_frame(img)) {
+	if (displayed_projector_pattern.points().empty()) {
+		report_projector_capture_rejection("no recorded pattern on screen; skipping blank/stale-pattern capture");
+		return false;
+	}
+	const bool dynamicSample = dynamic_projection_primed;
+	Mat processedImage = process_image_for_circle_detection(img);
+	if (!camera_calibrator.find_board(img)) {
+		report_projector_capture_rejection("chessboard/origin unavailable: " + camera_calibrator.get_orientation_status());
+		imshow("ImageThresholded", processedImage);
 		return false;
 	}
 
-	Mat processedImage = process_image_for_circle_detection(img);
+	const auto boardPoints = camera_calibrator.get_detected_board_points();
+	string rejectionReason;
+	if (!should_accept_board_sample(boardPoints, &rejectionReason)) {
+		report_projector_capture_rejection(rejectionReason);
+		imshow("ImageThresholded", processedImage);
+		return false;
+	}
 
 	if (add_projected(img, processedImage)) {
+		if (!dynamicSample) commit_accepted_board_sample(boardPoints);
+		last_projector_capture_rejection.clear();
 		
 		cout << "calibrating projector inside calibrate_projector"  << endl;
-		if (projector_calibrator.calibrate()) {
+		if (projector_calibrator.calibrate(camera_calibrator.get_image_size())) {
 			cout << "projector calibration finished!" << endl;
-			stereo_calibrate();
-
-			return true;
+			if (stereo_calibrate()) {
+				if (dynamicSample) commit_accepted_board_sample(boardPoints);
+				return true;
+			}
+			if (dynamicSample) {
+				projector_calibrator.imagePoints.pop_back();
+				projector_calibrator.objectPoints.pop_back();
+				projector_calibrator.frameMeasuredCircleImagePoints.pop_back();
+				projector_calibrator.frameMeasuredBoardImagePoints.pop_back();
+				projector_calibrator.camBoardRotations.pop_back();
+				projector_calibrator.camBoardTranslations.pop_back();
+				camera_calibrator.imagePointsCamObj.pop_back();
+				camera_calibrator.get_object_points().pop_back();
+				camera_calibrator.boardRotations.pop_back();
+				camera_calibrator.boardTranslations.pop_back();
+				cout << "Rejected sample discarded; previous stereo transform and accepted views retained." << endl;
+			}
 		}
 	}
 	imshow("ImageThresholded", processedImage);
 	return false;
 }
 
-void Tinker::calibration::stereo_calibrate()
+bool Tinker::calibration::stereo_calibrate()
 {
 	const auto & objectPoints = projector_calibrator.get_object_points();
 	cout << "objectPoints size : " << objectPoints.size() << endl;
-	vector<vector<cv::Point2f> > auxImagePointsCamera;
 
-	cout << "check size of all parameters :" << endl;
-	cout << "camera_calibrator.get_board_rotations() : " << camera_calibrator.get_board_rotations() .size()<< endl;
-	cout << "camera_calibrator.get_board_translations() : " << camera_calibrator.get_board_translations().size() << endl;
-	cout << "camera_calibrator.get_camera_matrix() : " << camera_calibrator.get_camera_matrix().size() << endl;
-	cout << "camera_calibrator.get_dist_coeffs() : " << camera_calibrator.get_dist_coeffs().size() << endl;
-
-	for (int i = 0; i < objectPoints.size(); i++) {
-		vector<cv::Point2f> auxImagePoints;
-		projectPoints(cv::Mat(objectPoints[i]),
-			camera_calibrator.get_board_rotations()[i],
-			camera_calibrator.get_board_translations()[i],
-			camera_calibrator.get_camera_matrix(),
-			camera_calibrator.get_dist_coeffs(),
-			auxImagePoints);
-
-		auxImagePointsCamera.push_back(auxImagePoints);
+	auto n = objectPoints.size();
+	if (projector_calibrator.imagePoints.size() != n ||
+		projector_calibrator.frameMeasuredCircleImagePoints.size() != n ||
+		projector_calibrator.camBoardRotations.size() != n ||
+		projector_calibrator.camBoardTranslations.size() != n) {
+		std::cerr << "Stereo input size mismatch: "
+			<< "obj=" << n
+			<< " projImg=" << projector_calibrator.imagePoints.size()
+			<< " camImg=" << projector_calibrator.frameMeasuredCircleImagePoints.size()
+			<< " refCamR=" << projector_calibrator.camBoardRotations.size()
+			<< " refCamT=" << projector_calibrator.camBoardTranslations.size()
+			<< std::endl;
+		return false;
 	}
+	const auto& auxImagePointsCamera = projector_calibrator.frameMeasuredCircleImagePoints;
 
 	cv::Mat projectorMatrix = projector_calibrator.get_camera_matrix();
 	cv::Mat projectorDistCoeffs = projector_calibrator.get_dist_coeffs();
@@ -283,31 +842,72 @@ void Tinker::calibration::stereo_calibrate()
 
 	cv::Mat fundamentalMatrix, essentialMatrix;
 	cv::Mat rotation3x3;
+	cv::Mat candidateTranslation;
 
 	if (cameraMatrix.empty() || cameraDistCoeffs.empty()) {
 		std::cerr << "Camera intrinsics are empty!" << std::endl;
-		return;
+		return false;
 	}
 
 	if (projectorMatrix.empty() || projectorDistCoeffs.empty()) {
 		std::cerr << "Camera intrinsics are empty!" << std::endl;
-		return;
+		return false;
 	}
 
-	cv::stereoCalibrate(objectPoints,
+	double stereoRms = std::numeric_limits<double>::infinity();
+	try {
+		stereoRms = cv::stereoCalibrate(objectPoints,
 		auxImagePointsCamera,
 		projector_calibrator.imagePoints,
 		cameraMatrix, cameraDistCoeffs,
 		projectorMatrix, projectorDistCoeffs,
 		camera_calibrator.get_image_size(),
-		rotation3x3, transCamToProj,
-		essentialMatrix, fundamentalMatrix);
+		rotation3x3, candidateTranslation,
+		essentialMatrix, fundamentalMatrix,
+		CALIB_FIX_INTRINSIC);
+	}
+	catch (const cv::Exception& error) {
+		cout << "Stereo fit rejected: OpenCV could not solve candidate views; working transform unchanged. "
+			<< error.what() << endl;
+		return false;
+	}
+	std::cout << "Candidate stereo RMS error: " << stereoRms << std::endl;
+	if (!commit_valid_stereo_fit(stereoRms, FLAGS_max_dynamic_stereo_rms, rotation3x3,
+		candidateTranslation, rotCamToProj, transCamToProj, last_dynamic_stereo_rms)) {
+		cout << "Stereo fit rejected: invalid transform or RMS above " << FLAGS_max_dynamic_stereo_rms
+			<< " px; working transform unchanged." << endl;
+		return false;
+	}
+	cout << "Stereo fit accepted: RMS=" << stereoRms << " px" << endl;
+	return true;
+}
 
-	cv::Rodrigues(rotation3x3, rotCamToProj);
+void Tinker::calibration::save_stereo_calibration(bool staticPhase) const
+{
+	if (projector_output_filename.empty() || rotCamToProj.empty() || transCamToProj.empty() ||
+		!std::isfinite(last_dynamic_stereo_rms)) {
+		throw std::runtime_error("Cannot save camera-to-projector extrinsics before stereo calibration succeeds.");
+	}
+
+	cv::Mat rotationMatrix;
+	cv::Rodrigues(rotCamToProj, rotationMatrix);
+
+	cv::FileStorage fs(projector_output_filename, cv::FileStorage::APPEND);
+	if (!fs.isOpened()) {
+		throw std::runtime_error("Unable to append stereo calibration to: " + projector_output_filename);
+	}
+
+	const string prefix=staticPhase ? "static_" : "";
+	fs << prefix+"Rotation_Vector" << rotCamToProj;
+	fs << prefix+"Rotation_Matrix" << rotationMatrix;
+	fs << prefix+"Translation_Vector" << transCamToProj;
+	fs << prefix+"stereo_rms_error" << last_dynamic_stereo_rms;
+	cout << (staticPhase ? "Saved static projector calibration to " : "Saved final projector calibration to ")
+		<< projector_output_filename << endl;
 }
 
 
-bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
+bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat& processedImg)
 {
 	vector<cv::Point2f> chessImgPts;
 
@@ -316,27 +916,48 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 	if (bPrintedPatternFound) {
 		Size board = camera_calibrator.get_board_size();
 		
-		drawChessboardCorners(img, board, Mat(chessImgPts), bPrintedPatternFound);
 		vector<cv::Point2f> circlesImgPts;
-		bool bProjectedPatternFound = cv::findCirclesGrid(processedImg, projector_calibrator.get_circle_pattern_size(), circlesImgPts, cv::CALIB_CB_ASYMMETRIC_GRID);
+		vector<cv::KeyPoint> blobs;
+		bool bProjectedPatternFound = detect_projector_circles(processedImg,
+			projector_calibrator.get_circle_pattern_size(), circlesImgPts, blobs);
+		// Only annotate after detection; never feed debug graphics into the detector.
+		Mat debugImage;
+		cv::drawKeypoints(processedImg, blobs, debugImage, Scalar(0, 0, 255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+		processedImg = debugImage;
+		cv::putText(processedImg, "Blob candidates: " + std::to_string(blobs.size()) + " (grid needs 20)",
+			Point(10, 25), cv::FONT_HERSHEY_SIMPLEX, 0.6, Scalar(0, 0, 255), 2);
+		drawChessboardCorners(img, board, Mat(chessImgPts), bPrintedPatternFound);
+		drawChessboardCorners(processedImg, board, Mat(chessImgPts), bPrintedPatternFound);
 
 		if (bProjectedPatternFound) {
 			drawChessboardCorners(img, projector_calibrator.get_circle_pattern_size(), Mat(circlesImgPts), bProjectedPatternFound);
+			drawChessboardCorners(processedImg, projector_calibrator.get_circle_pattern_size(), Mat(circlesImgPts), bProjectedPatternFound);
 
 			vector<cv::Point3f> circlesObjectPts;
 			cv::Mat boardRot;
 			cv::Mat boardTrans;
 
 			camera_calibrator.compute_candidate_board_pose(chessImgPts, boardRot, boardTrans);
-			camera_calibrator.back_project(boardRot, boardTrans, circlesImgPts, circlesObjectPts);
+			if (!camera_calibrator.back_project(boardRot, boardTrans, circlesImgPts, circlesObjectPts)) {
+				report_projector_capture_rejection("circle back-projection failed: invalid or grazing board-plane rays");
+				return false;
+			}
+
+			// Store the measured image of circles as seen from the camera, to be used by the projector calibrator later
+			projector_calibrator.frameMeasuredCircleImagePoints.push_back(circlesImgPts);
+			projector_calibrator.frameMeasuredBoardImagePoints.push_back(chessImgPts);
 
 			camera_calibrator.imagePointsCamObj.push_back(chessImgPts);
 			camera_calibrator.get_object_points().push_back(camera_calibrator.get_candidate_object_points());
 			camera_calibrator.boardRotations.push_back(boardRot);
 			camera_calibrator.boardTranslations.push_back(boardTrans);
 
-			projector_calibrator.imagePoints.push_back(projector_calibrator.get_candidate_image_points());
+			projector_calibrator.imagePoints.push_back(displayed_projector_pattern.points());
 			projector_calibrator.objectPoints.push_back(circlesObjectPts);
+
+			// during the same frame where we computed camera pose, we also store that pose in the projector calibrator
+			projector_calibrator.camBoardRotations.push_back(boardRot);
+			projector_calibrator.camBoardTranslations.push_back(boardTrans);
 
 			cout << "after add_projected : " << "imagePoints size : " << projector_calibrator.imagePoints.size() << endl;
 			cout << "after add_projected : " << "objectPoints size : " << projector_calibrator.objectPoints.size() << endl;
@@ -344,8 +965,11 @@ bool Tinker::calibration::add_projected(cv::Mat img, cv::Mat processedImg)
 			return true;
 		}
 		else {
+			report_projector_capture_rejection("complete 4x5 circle grid not detected; blob candidates=" + std::to_string(blobs.size()) +
+				" (need 20 grid points, candidates may include clutter). Check threshold/blob settings and ImageThresholded; all circles must lie on the chessboard plane");
 			return false;
 		}
 	}
+	report_projector_capture_rejection("chessboard detection failed during circle capture");
 	return false;
 }

@@ -276,3 +276,5 @@ __pycache__/
 
 # build files and folders
 build/*
+
+dynamic_projection/build/*

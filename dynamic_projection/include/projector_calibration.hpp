@@ -1,4 +1,5 @@
 #include "camera_calibration.hpp"
+#include <limits>
 
 using namespace std;
 using namespace cv;
@@ -12,11 +13,12 @@ namespace Tinker {
 		projector_calibration();
 		~projector_calibration();
 
-		void load(string projector_config);
+		bool load(string projector_config);
 
 		Mat get_dist_coeffs() { return distCoeffs; }
 		Mat get_camera_matrix() { return cameraMatrix; }
 		Size get_circle_pattern_size() { return circlePatternSize; }
+		Size get_image_size() const { return imageSize; }
 
 		void set_static_candidate_image_points();
 		void set_candidate_image_points(vector<cv::Point2f> pts);
@@ -25,20 +27,28 @@ namespace Tinker {
 
 		vector<vector<Point2f>> imagePoints;
 		vector<Point2f> candidate_image_points;
-		vector<Point2f> get_candidate_image_points() { return candidate_image_points; }
-		vector<vector<cv::Point3f>> get_object_points() { return objectPoints; }
+		const vector<Point2f>& get_candidate_image_points() const { return candidate_image_points; }
+		const vector<vector<cv::Point3f>>& get_object_points() const { return objectPoints; }
+
+		// The following parameters save the corresponding camera pose at the same frame projection calibration succeeded
+		vector<Mat> camBoardRotations;
+		vector<Mat> camBoardTranslations;
+
+		vector<vector<cv::Point2f>> frameMeasuredCircleImagePoints;  // one entry per frame
+		vector<vector<cv::Point2f>> frameMeasuredBoardImagePoints;
 
 		// object points in the world coordinate system
 		vector<vector<cv::Point3f>> objectPoints;
 
-		vector<Mat> get_board_rotations() { return boardRotations; }
-		vector<Mat> get_board_translations() { return boardTranslations; }
+		const vector<Mat>& get_board_rotations() const { return boardRotations; }
+		const vector<Mat>& get_board_translations() const { return boardTranslations; }
+		double get_last_avg_reprojection_error() const { return last_avg_reprojection_error; }
 
-		bool calibrate();
+		bool calibrate(Size cameraImageSize);
 
-		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, int _nFramesTotalProjectorCalib, Pattern _patternType, float px, float py);
+		void setup_projector_parameters(Size _imageSize, string _outputFileName, Size _patternSize, float _squareSize, int _nFramesBeforeDynamicProjectorCalib, Pattern _patternType, float px, float py);
 
-		void load_calibration_parameters(string fileName);
+		bool load_calibration_parameters(string fileName);
 
 		void reset_boards();
 
@@ -60,11 +70,11 @@ namespace Tinker {
 		string outputFileName = "projector_params.xml";
 
 		int nFramesBeforeDynamcProjectorCalib;
-		int nFramesTotalProjectorCalib;
 		bool projector_is_calibrated = false;
+		double last_avg_reprojection_error = std::numeric_limits<double>::infinity();
+		std::vector<float> last_per_view_reprojection_errors;
 
 #pragma region projector calibration methods
-
 		static double computeReprojectionErrors(
 			const vector<vector<Point3f> >& objectPoints,
 			const vector<vector<Point2f> >& imagePoints,
@@ -88,12 +98,6 @@ namespace Tinker {
 			const vector<float>& reprojErrs,
 			const vector<vector<Point2f> >& imagePoints,
 			double totalAvgErr);
-
-		static bool runAndSave(const string& outputFilename,
-			const vector<vector<Point2f> >& imagePoints, vector<vector<Point3f> > objectPoints,
-			Size imageSize,
-			float aspectRatio, int flags, Mat& _cameraMatrix,
-			Mat& distCoeffs, bool writeExtrinsics, bool writePoints);
 
 #pragma endregion
 

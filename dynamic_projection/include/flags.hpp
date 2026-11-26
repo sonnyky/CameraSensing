@@ -10,47 +10,95 @@
 /// @brief Message for help argument
 static const char help_message[] = "Print a usage message.";
 
-/// @brief Message for video argument
-static const char video_message[] = "Required. Path to a video. Default value is \"cam\" to work with camera.";
+/// @brief Message for calibration pattern dimensions
+static const char pattern_dimensions_message[] = "Number of inner chessboard corners along the corresponding width or height.";
+static const char board_square_size_message[] = "Printed chessboard square side length in centimeters.";
 
-/// @brief Message for performance counter
-static const char performance_counter_message[] = "Optional. Enable per-layer performance report.";
+static const char nboards_before_dynamic_message[] = "Number of retained static Gray-code board positions required before dynamic calibration; extra candidates are collected separately.";
 
-/// @brief Message for not showing processed video
-static const char no_show_processed_video[] = "Optional. Do not show processed video.";
+static const char nboards_final_proj_calib_message[] = "Minimum accepted dynamic-projector samples for completion, also subject to the stereo RMS limit.";
 
-/// @brief Message for raw output
-static const char raw_output_message[] = "Optional. Output inference results as raw values.";
-DEFINE_bool(h, false, help_message);
+static const char minimum_frames_message[] = "Number of retained camera calibration views; extra candidates are collected separately.";
 
-DEFINE_uint64(pattern_width, 9, help_message);
-DEFINE_uint64(pattern_height, 6, help_message);
-DEFINE_string(pattern_type, "chessboard", video_message);
-DEFINE_uint64(num_boards_before_dynamic_projector_calib, 5, help_message);
-DEFINE_uint64(num_boards_final_projector_calib, 10, help_message);
-DEFINE_uint64(minimum_frames, 5, help_message);
-DEFINE_uint64(delay_between_frames, 1000, help_message);
-DEFINE_uint64(s, 1, help_message);
-DEFINE_string(camera_calib_filename, "camera_params.xml", video_message);
-DEFINE_string(ps, "projector_params.xml", video_message);
-DEFINE_bool(write_points, false, help_message);
-DEFINE_bool(write_extrinsics, true, help_message);
-DEFINE_uint64(zt, 8, help_message);
-DEFINE_bool(su, true, help_message);
+static const char delay_frames_message[] = "Minimum interval in milliseconds between accepted calibration samples after the first sample in each phase.";
+static const char board_motion_message[] = "Minimum chessboard corner RMS movement in pixels required to accept another calibration sample.";
+
+static const char calibration_output_dir_message[] = "Directory for calibration result files. Empty uses the executable directory.";
+static const char projector_offset_scale_message[] = "Scale factor for the positive board-Y offset below the marker during dynamic projector calibration.";
+static const char projector_circle_radius_message[] = "Radius in pixels for the projected circle pattern.";
+static const char projector_smoothing_rate_message[] = "Smoothing rate for the shared tracking pose only; dynamic calibration updates are unsmoothed.";
+static const char dynamic_stereo_rms_message[] = "Maximum stereo RMS error allowed before leaving dynamic calibration.";
+static const char calibration_candidate_margin_message[] = "Extra accepted views collected before camera or static-projector view selection.";
+static const char max_camera_per_view_rms_message[] = "Maximum camera per-view RMS eligible for final view selection.";
+static const char max_camera_rms_message[] = "Maximum aggregate camera RMS allowed for calibration completion.";
+static const char max_projector_per_view_rms_message[] = "Maximum projector per-view RMS eligible for final view selection.";
+static const char max_projector_rms_message[] = "Maximum aggregate projector RMS allowed for calibration completion.";
+static const char minimum_calibration_position_span_message[] = "Minimum normalized chessboard-centroid span for camera view selection.";
+static const char minimum_calibration_distance_ratio_message[] = "Minimum far-to-near absolute board-origin Z translation ratio at view selection, before the final camera refit.";
+static const char minimum_calibration_orientation_span_message[] = "Minimum board-normal angular span in degrees at view selection, before the final camera refit.";
+
+
+
+
+DECLARE_bool(h);
+DECLARE_uint64(pattern_width);
+DECLARE_uint64(pattern_height);
+DECLARE_double(board_square_size_cm);
+DECLARE_uint64(num_boards_before_dynamic_projector_calib);
+DECLARE_uint64(num_boards_final_projector_calib);
+DECLARE_uint64(minimum_frames);
+DECLARE_uint64(delay_between_frames);
+DECLARE_double(minimum_board_motion_px);
+DECLARE_string(calibration_output_dir);
+DECLARE_int32(projector_display_index);
+DECLARE_uint64(camera_width);
+DECLARE_uint64(camera_height);
+DECLARE_double(projector_offset_y_scale);
+DECLARE_uint64(projected_circle_radius);
+DECLARE_double(static_gray_max_board_motion_px);
+DECLARE_double(static_gray_min_direct_contrast);
+DECLARE_double(static_gray_min_bit_contrast);
+DECLARE_uint64(static_gray_sample_radius_px);
+DECLARE_uint64(static_gray_projector_block_size);
+DECLARE_uint64(static_gray_phase_period_px);
+DECLARE_uint64(static_gray_start_delay_seconds);
+DECLARE_string(calibration_file_mode);
+DECLARE_double(minimum_projector_board_position_span);
+DECLARE_double(minimum_projector_pattern_span);
+DECLARE_double(projector_detection_threshold);
+DECLARE_double(projector_blob_min_area);
+DECLARE_double(projector_blob_max_area);
+DECLARE_double(projector_blob_min_circularity);
+DECLARE_double(projector_blob_min_inertia);
+DECLARE_double(projector_blob_min_convexity);
+DECLARE_uint64(projector_settle_ms);
+DECLARE_uint64(projector_discard_frames);
+DECLARE_bool(require_board_orientation);
+DECLARE_int32(board_aruco_dictionary);
+DECLARE_int32(board_origin_aruco_id);
+DECLARE_double(board_tracking_max_motion_squares);
+DECLARE_bool(use_projection_region);
+DECLARE_bool(project_grid_inside_checkerboard);
+DECLARE_double(projection_region_width_cm);
+DECLARE_double(projection_region_height_cm);
+DECLARE_double(projection_region_top_cm);
+DECLARE_double(projection_region_center_x_cm);
+DECLARE_double(projector_smoothing_rate);
+DECLARE_double(max_dynamic_stereo_rms);
+DECLARE_uint64(calibration_candidate_margin);
+DECLARE_double(max_camera_per_view_rms);
+DECLARE_double(max_camera_rms);
+DECLARE_double(max_projector_per_view_rms);
+DECLARE_double(max_projector_rms);
+DECLARE_double(minimum_calibration_position_span);
+DECLARE_double(minimum_calibration_distance_ratio);
+DECLARE_double(minimum_calibration_orientation_span_deg);
 
 
 /**	
 * @brief This function shows a help message
 */
 static void showUsage() {
-	std::cout << std::endl;
-	std::cout << "dynami_projection [OPTION]" << std::endl;
-	std::cout << "Options:" << std::endl;
-	std::cout << std::endl;
-	std::cout << "    -h                         " << help_message << std::endl;
-	std::cout << "    -i \"<path>\"                " << video_message << std::endl;
-	std::cout << "    -pc                        " << performance_counter_message << std::endl;
-	std::cout << "    -no_show                   " << no_show_processed_video << std::endl;
-	std::cout << "    -r                         " << raw_output_message << std::endl;
+	gflags::ShowUsageWithFlags("dynamic_projection");
 }
 
