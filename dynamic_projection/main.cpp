@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <cmath>
 #include <vector>
+#include <algorithm>
 #include <windows.h>
 #include <state.hpp>
 #include <flags.hpp>
@@ -73,18 +74,23 @@ bool ParseAndCheckCommandLine(int argc, char* argv[]) {
 	if (!std::isfinite(FLAGS_board_square_size_cm) || FLAGS_board_square_size_cm <= 0.0) {
 		throw std::invalid_argument("--board_square_size_cm must be a finite positive length in centimeters.");
 	}
+	if (FLAGS_calibration_file_mode!="redo" && FLAGS_calibration_file_mode!="reuse")
+		throw std::invalid_argument("--calibration_file_mode must be redo or reuse.");
 	if (FLAGS_projector_display_index < -1) {
 		throw std::invalid_argument("--projector_display_index must be -1 or nonnegative.");
 	}
 	if (FLAGS_camera_width == 0 || FLAGS_camera_height == 0 || FLAGS_camera_width > 16384 || FLAGS_camera_height > 16384) {
 		throw std::invalid_argument("Camera width and height must be within 1..16384 pixels.");
 	}
-	if (!std::isfinite(FLAGS_static_projector_spacing_px) || FLAGS_static_projector_spacing_px <= 0.0 ||
-		!std::isfinite(FLAGS_static_projector_center_x) || FLAGS_static_projector_center_x < 0.0 || FLAGS_static_projector_center_x > 1.0 ||
-		!std::isfinite(FLAGS_static_projector_center_y) || FLAGS_static_projector_center_y < 0.0 || FLAGS_static_projector_center_y > 1.0 ||
-		FLAGS_projected_circle_radius == 0 ||
-		2.0 * FLAGS_projected_circle_radius >= std::sqrt(2.0) * FLAGS_static_projector_spacing_px) {
-		throw std::invalid_argument("Static projector spacing/center must be finite and valid; circle radius must be positive and circles must not touch.");
+	if (FLAGS_projected_circle_radius == 0) throw std::invalid_argument("Projected circle radius must be positive.");
+	if (!std::isfinite(FLAGS_static_gray_max_board_motion_px) || FLAGS_static_gray_max_board_motion_px<=0 ||
+		!std::isfinite(FLAGS_static_gray_min_direct_contrast) || FLAGS_static_gray_min_direct_contrast<=0 || FLAGS_static_gray_min_direct_contrast>255 ||
+		!std::isfinite(FLAGS_static_gray_min_bit_contrast) || FLAGS_static_gray_min_bit_contrast<=0 || FLAGS_static_gray_min_bit_contrast>255 ||
+		FLAGS_static_gray_sample_radius_px>10 || FLAGS_static_gray_projector_block_size<1 ||
+		FLAGS_static_gray_projector_block_size>32 || FLAGS_static_gray_phase_period_px<FLAGS_static_gray_projector_block_size ||
+		FLAGS_static_gray_phase_period_px>256 || FLAGS_static_gray_phase_period_px%FLAGS_static_gray_projector_block_size!=0 ||
+		FLAGS_static_gray_start_delay_seconds>30) {
+		throw std::invalid_argument("Static Gray-code motion/contrast settings are invalid.");
 	}
 	for (double span : { FLAGS_minimum_projector_board_position_span, FLAGS_minimum_projector_pattern_span }) {
 		if (!std::isfinite(span) || span <= 0.0 || span > std::sqrt(2.0)) {
@@ -208,16 +214,32 @@ int main(int argc, char* argv[])
 			{
 				bool success = calib.calibrate_camera(frame);
 				if (success) {
-					std::cout << "Camera Calibration complete. Switching to Static Projector Calibration State." << std::endl;
+					std::cout << "Camera Calibration complete." << std::endl;
+					projImage=cv::Mat::zeros(projImage.size(),projImage.type());
+					cv::imshow("ProjectionWindow",projImage);
+					for (uint64_t remaining=FLAGS_static_gray_start_delay_seconds;remaining>0;--remaining) {
+						std::cout << "Static projector calibration starts in " << remaining << "..." << std::endl;
+						cv::Mat countdownFrame=frame.clone();
+						const std::string message="Static projector calibration starts in " + std::to_string(remaining);
+						int baseline=0;
+						const cv::Size textSize=cv::getTextSize(message,cv::FONT_HERSHEY_SIMPLEX,1.1,2,&baseline);
+						const cv::Point textOrigin(std::max(10,(countdownFrame.cols-textSize.width)/2),
+							std::max(textSize.height+10,(countdownFrame.rows+textSize.height)/2));
+						cv::putText(countdownFrame,message,textOrigin,cv::FONT_HERSHEY_SIMPLEX,1.1,cv::Scalar(0,255,255),2,cv::LINE_AA);
+						cv::imshow("CameraDebug",countdownFrame);
+						if (cv::waitKey(1000)==27) throw std::runtime_error("Calibration cancelled during static-projector countdown.");
+					}
+					std::cout << "Switching to Static Projector Calibration State." << std::endl;
 					calib.reset_sample_capture_gate();
+					calib.reset_static_gray_code(projImage);
 					capture_state.transition_to<StaticProjectorCalibrationState>();
 				}
 			}
 			void operator()(StaticProjectorCalibrationState* c)
 			{
-				calib.draw_projector_pattern(projImage);
-				bool success = calib.calibrate_projector(frame);
+				bool success = calib.process_static_gray_code_frame(frame,projImage);
 				if (success) {
+					calib.save_stereo_calibration(true);
 					std::cout << "Static Projector Calibration complete. Switching to Dynamic Projector Calibration State." << std::endl;
 					calib.reset_dynamic_projection_priming();
 					calib.reset_dynamic_calibration_solution();
@@ -271,8 +293,6 @@ int main(int argc, char* argv[])
 		Tinker::capture frame_capture("webcam", 0,static_cast<int>(FLAGS_camera_width),static_cast<int>(FLAGS_camera_height));
 		//cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
 
-		capture_state.transition_to<CameraCalibrationState>();
-	
 #pragma endregion
 
 
@@ -294,8 +314,30 @@ int main(int argc, char* argv[])
 		const float boardSquareSizeMm = static_cast<float>(FLAGS_board_square_size_cm * 10.0);
 		calibration_manager.setup_camera_calibration_parameters(cv::Size(FLAGS_pattern_width, FLAGS_pattern_height), camera_image_size, boardSquareSizeMm, 1.0, FLAGS_minimum_frames, FLAGS_delay_between_frames, Tinker::DETECTION, 0, cameraOutputFilename);
 
-		calibration_manager.setup_projector_calibration_parameters(Size(width_second, height_second), projectorOutputFilename, Size(4,5), static_cast<float>(FLAGS_static_projector_spacing_px), FLAGS_num_boards_before_dynamic_projector_calib, FLAGS_num_boards_final_projector_calib, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 0, 0);
-		calibration_manager.set_projector_static_image_points();
+		calibration_manager.setup_projector_calibration_parameters(Size(width_second, height_second), projectorOutputFilename, Size(4,5), 1.0f, FLAGS_num_boards_before_dynamic_projector_calib, FLAGS_num_boards_final_projector_calib, Tinker::Pattern::ASYMMETRIC_CIRCLES_GRID, 0, 0);
+
+		if (FLAGS_calibration_file_mode=="reuse") {
+			const auto reuseStage=calibration_manager.load_saved_calibration(projectorOutputFilename);
+			if (reuseStage==Tinker::CalibrationReuseStage::Complete) {
+				capture_state.transition_to<TrackingState>();
+			}
+			else if (reuseStage==Tinker::CalibrationReuseStage::StaticProjector) {
+				calibration_manager.reset_dynamic_projection_priming();
+				calibration_manager.reset_dynamic_calibration_solution();
+				calibration_manager.reset_sample_capture_gate();
+				capture_state.transition_to<DynamicProjectorCalibrationState>();
+			}
+			else if (reuseStage==Tinker::CalibrationReuseStage::CameraOnly) {
+				calibration_manager.reset_sample_capture_gate();
+				calibration_manager.reset_static_gray_code(projection);
+				capture_state.transition_to<StaticProjectorCalibrationState>();
+			}
+			else capture_state.transition_to<CameraCalibrationState>();
+		}
+		else {
+			std::cout << "Calibration file mode: redo; saved calibration files will be replaced after successful phases." << std::endl;
+			capture_state.transition_to<CameraCalibrationState>();
+		}
 #pragma endregion
 
 
@@ -303,7 +345,10 @@ int main(int argc, char* argv[])
 		int processing = 1;
 		do {
 			cv::imshow("ProjectionWindow", projection);
-			if (cv::waitKey(static_cast<int>(FLAGS_projector_settle_ms)) == 27) break;
+			const int settleKey=cv::waitKey(static_cast<int>(FLAGS_projector_settle_ms));
+			if (settleKey == 27) break;
+			if (settleKey == ' ' || settleKey == 13 || settleKey == 10)
+				calibration_manager.request_static_gray_capture();
 			calibration_manager.record_displayed_projector_pattern(cv::countNonZero(projection) > 0);
 			for (uint64_t skipped = 0; skipped < FLAGS_projector_discard_frames; ++skipped) frame_capture.read();
 			cv::Mat frame = frame_capture.read(); // Capture the frame
@@ -321,7 +366,10 @@ int main(int argc, char* argv[])
 			cv::imshow("CameraDebug", debugFrame);
 
 			// Necessary to update the OpenCV window and check for user input
-			if (cv::waitKey(10) == 27) { // Exit on 'Esc' key
+			const int inputKey=cv::waitKey(10);
+			if (inputKey == ' ' || inputKey == 13 || inputKey == 10)
+				calibration_manager.request_static_gray_capture();
+			if (inputKey == 27) { // Exit on 'Esc' key
 				processing = 0;
 			}
 			

@@ -14,9 +14,9 @@ Tinker::projector_calibration::~projector_calibration()
 {
 }
 
-void Tinker::projector_calibration::load(string projector_config)
+bool Tinker::projector_calibration::load(string projector_config)
 {
-    load_calibration_parameters(projector_config);
+    return load_calibration_parameters(projector_config);
 }
 
 void Tinker::projector_calibration::set_static_candidate_image_points()
@@ -32,8 +32,8 @@ void Tinker::projector_calibration::set_static_candidate_image_points()
 	float patternHeight = (circlePatternSize.height - 1) * spacing;
 
 	// Center the pattern in the middle of the projector screen
-	patternPosition.x = static_cast<float>(screenWidth * FLAGS_static_projector_center_x - patternWidth / 2.0);
-	patternPosition.y = static_cast<float>(screenHeight * FLAGS_static_projector_center_y - patternHeight / 2.0);
+	patternPosition.x = static_cast<float>(screenWidth * 0.5 - patternWidth / 2.0);
+	patternPosition.y = static_cast<float>(screenHeight * 0.5 - patternHeight / 2.0);
 	const double radius = static_cast<double>(FLAGS_projected_circle_radius);
 	if (patternPosition.x - radius < 0 || patternPosition.y - radius < 0 ||
 		patternPosition.x + patternWidth + radius >= screenWidth ||
@@ -42,8 +42,7 @@ void Tinker::projector_calibration::set_static_candidate_image_points()
 	}
 	cout << "Static projector grid footprint: " << patternWidth + 2 * radius << " x "
 		<< patternHeight + 2 * radius << " pixels; center="
-		<< screenWidth * FLAGS_static_projector_center_x << ","
-		<< screenHeight * FLAGS_static_projector_center_y << endl;
+		<< screenWidth * 0.5 << "," << screenHeight * 0.5 << endl;
 	const double centerSpan = std::hypot(patternWidth / screenWidth, patternHeight / screenHeight);
 	if (centerSpan < FLAGS_minimum_projector_pattern_span) {
 		throw std::invalid_argument("Static grid is too small for --minimum_projector_pattern_span; increase spacing before collecting calibration frames.");
@@ -154,8 +153,9 @@ bool Tinker::projector_calibration::calibrate(Size cameraImageSize)
 		}
 		const double projectorSpan = std::hypot((maximumPoint.x - minimumPoint.x) / imageSize.width,
 			(maximumPoint.y - minimumPoint.y) / imageSize.height);
-		cout << "Projector-image circle-center footprint span=" << projectorSpan << endl;
-		requireCoverage("projector pattern span", projectorSpan, FLAGS_minimum_projector_pattern_span, "Increase static spacing; extra board movement cannot enlarge a fixed projector grid.");
+		cout << "Projector-image decoded-point footprint span=" << projectorSpan << endl;
+		requireCoverage("projector decoded-point span", projectorSpan, FLAGS_minimum_projector_pattern_span,
+			"Move the board through more of the projector field while retaining useful depth and tilt variation.");
 		if (!coveragePassed) {
 			return false;
 		}
@@ -255,25 +255,37 @@ void Tinker::projector_calibration::setup_projector_parameters(Size _imageSize, 
 	nFramesBeforeDynamcProjectorCalib = _nFramesBeforeDynamicProjectorCalib;
 }
 
-void Tinker::projector_calibration::load_calibration_parameters(string fileName)
+bool Tinker::projector_calibration::load_calibration_parameters(string fileName)
 {
 	struct stat buffer;
 	bool found = stat(fileName.c_str(), &buffer) == 0;
 	cout << "Camera calibration file exists : " << found << endl;
+	projector_is_calibrated=false;
 	if (found) {
 		FileStorage fs(fileName, FileStorage::READ);
+		if (!fs.isOpened()) return false;
+		int savedWidth=0,savedHeight=0;
+		fs["image_width"] >> savedWidth;
+		fs["image_height"] >> savedHeight;
+		if (savedWidth!=imageSize.width || savedHeight!=imageSize.height) {
+			cout << "Projector calibration load rejected: saved image size " << savedWidth << 'x' << savedHeight
+				<< " does not match projector " << imageSize.width << 'x' << imageSize.height << '.' << endl;
+			return false;
+		}
 		Mat loadedMatrix, loadedDistortion;
 		fs["camera_matrix"] >> loadedMatrix;
 		fs["distortion_coefficients"] >> loadedDistortion;
 		string reason;
 		if (!valid_projector_distortion(loadedMatrix, loadedDistortion, imageSize, reason)) {
 			cout << "Projector calibration load rejected: " << reason << ". Recalibrate." << endl;
-			return;
+			return false;
 		}
 		loadedMatrix.convertTo(cameraMatrix,CV_64F);
 		loadedDistortion.convertTo(distCoeffs,CV_64F);
 		projector_is_calibrated = true;
+		return true;
 	}
+	return false;
 }
 
 void Tinker::projector_calibration::reset_boards()
@@ -318,7 +330,10 @@ bool Tinker::projector_calibration::runCalibration(vector<vector<Point2f>> image
 
 	distCoeffs = Mat::zeros(8, 1, CV_64F);
 
-	objectPoints.resize(imagePoints.size(), objectPoints[0]);
+	if (imagePoints.empty() || objectPoints.size()!=imagePoints.size()) return false;
+	for (size_t view=0;view<imagePoints.size();++view) {
+		if (imagePoints[view].size()!=objectPoints[view].size() || imagePoints[view].size()<6) return false;
+	}
 
 	double rms = calibrateCamera(objectPoints, imagePoints, imageSize, cameraMatrix,
 		distCoeffs, rvecs, tvecs, flags | CALIB_FIX_K3 | CALIB_FIX_K4 | CALIB_FIX_K5 | CALIB_FIX_K6);

@@ -14,7 +14,7 @@ static const char help_message[] = "Print a usage message.";
 static const char pattern_dimensions_message[] = "Number of inner chessboard corners along the corresponding width or height.";
 static const char board_square_size_message[] = "Printed chessboard square side length in centimeters.";
 
-static const char nboards_before_dynamic_message[] = "Number of retained static-projector views required before dynamic calibration; extra candidates are collected separately.";
+static const char nboards_before_dynamic_message[] = "Number of retained static Gray-code board positions required before dynamic calibration; extra candidates are collected separately.";
 
 static const char nboards_final_proj_calib_message[] = "Minimum accepted dynamic-projector samples for completion, also subject to the stereo RMS limit.";
 
@@ -55,9 +55,14 @@ DECLARE_uint64(camera_width);
 DECLARE_uint64(camera_height);
 DECLARE_double(projector_offset_y_scale);
 DECLARE_uint64(projected_circle_radius);
-DECLARE_double(static_projector_spacing_px);
-DECLARE_double(static_projector_center_x);
-DECLARE_double(static_projector_center_y);
+DECLARE_double(static_gray_max_board_motion_px);
+DECLARE_double(static_gray_min_direct_contrast);
+DECLARE_double(static_gray_min_bit_contrast);
+DECLARE_uint64(static_gray_sample_radius_px);
+DECLARE_uint64(static_gray_projector_block_size);
+DECLARE_uint64(static_gray_phase_period_px);
+DECLARE_uint64(static_gray_start_delay_seconds);
+DECLARE_string(calibration_file_mode);
 DECLARE_double(minimum_projector_board_position_span);
 DECLARE_double(minimum_projector_pattern_span);
 DECLARE_double(projector_detection_threshold);

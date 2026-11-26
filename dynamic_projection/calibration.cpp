@@ -11,6 +11,7 @@
 #include "projection_region_layout.hpp"
 #include "projector_distortion_validation.hpp"
 #include "shared_pose_smoothing.hpp"
+#include "gray_code_calibration.hpp"
 
 namespace {
 void draw_wrapped_status(cv::Mat& image, const std::string& message, const cv::Scalar& color)
@@ -82,6 +83,208 @@ void Tinker::calibration::set_projector_static_image_points()
 	projector_calibrator.set_static_candidate_image_points();
 }
 
+void Tinker::calibration::reset_static_gray_code(Mat& projectorImage)
+{
+	static_gray_patterns=make_gray_code_patterns(projector_calibrator.get_image_size(),
+		static_cast<int>(FLAGS_static_gray_projector_block_size),static_cast<int>(FLAGS_static_gray_phase_period_px));
+	if (static_gray_patterns.empty()) throw std::runtime_error("Unable to generate static projector Gray-code patterns.");
+	static_gray_captures.clear();
+	static_gray_capture_index=0;
+	static_gray_initial_board_points.clear();
+	static_gray_camera_samples.clear();
+	static_gray_board_samples.clear();
+	static_gray_board_rotation.release();
+	static_gray_board_translation.release();
+	static_gray_initialized=true;
+	static_gray_capture_armed=false;
+	projectorImage=static_gray_patterns.front().clone();
+	cout << "Static Gray-code calibration ready: " << static_gray_patterns.size()
+		<< " reference/code frames plus one final motion-check frame per board position. "
+		<< "Show the complete checkerboard and ID " << FLAGS_board_origin_aruco_id
+		<< ", finish propping the board, then press SPACE or ENTER to start." << endl;
+}
+
+void Tinker::calibration::request_static_gray_capture()
+{
+	if (!static_gray_initialized || static_gray_capture_index!=0 || static_gray_capture_armed) return;
+	static_gray_capture_armed=true;
+	last_projector_capture_rejection.clear();
+	cout << "Static Gray/phase capture armed; validating the board pose before starting." << endl;
+}
+
+bool Tinker::calibration::process_static_gray_code_frame(const Mat& image,Mat& projectorImage)
+{
+	if (!static_gray_initialized) {
+		reset_static_gray_code(projectorImage);
+		return false;
+	}
+	if (image.empty()) return false;
+	Mat gray;
+	if (image.channels()==3) cvtColor(image,gray,COLOR_BGR2GRAY); else gray=image.clone();
+
+	// Index zero is the black reference frame. Acquire the board pose only on
+	// this clean image, before any Gray-code illumination can obscure corners.
+	if (static_gray_capture_index==0) {
+		if (!camera_calibrator.find_board(image)) {
+			static_gray_capture_armed=false;
+			report_projector_capture_rejection("Static Gray code waiting for a complete checkerboard and ID " +
+				std::to_string(FLAGS_board_origin_aruco_id) + ": " + camera_calibrator.get_orientation_status());
+			projectorImage=static_gray_patterns.front().clone();
+			return false;
+		}
+		const auto boardPoints=camera_calibrator.get_detected_board_points();
+		if (!static_gray_capture_armed) {
+			report_projector_capture_rejection("Static Gray/phase ready; finish propping the board, then press SPACE or ENTER to start one sequence");
+			projectorImage=static_gray_patterns.front().clone();
+			return false;
+		}
+		if (static_gray_waiting_for_pose_change) {
+			double squaredMovement=0;
+			if (boardPoints.size()!=static_gray_last_failed_board_points.size()) squaredMovement=std::numeric_limits<double>::infinity();
+			else for (size_t index=0;index<boardPoints.size();++index) {
+				const Point2f delta=boardPoints[index]-static_gray_last_failed_board_points[index];
+				squaredMovement+=delta.dot(delta);
+			}
+			const double movementRms=std::sqrt(squaredMovement/std::max<size_t>(1,boardPoints.size()));
+			if (!std::isfinite(movementRms) || movementRms<FLAGS_minimum_board_motion_px) {
+				static_gray_capture_armed=false;
+				report_projector_capture_rejection("Static Gray/phase capture PAUSED after two zero-phase sequences; move the checkerboard to a different pose to retry");
+				projectorImage=static_gray_patterns.front().clone();
+				return false;
+			}
+			cout << "Static Gray/phase capture resumed after checkerboard movement=" << movementRms << " px." << endl;
+			static_gray_waiting_for_pose_change=false;
+			static_gray_consecutive_zero_phase_failures=0;
+		}
+		string rejection;
+		if (!should_accept_board_sample(boardPoints,&rejection)) {
+			static_gray_capture_armed=false;
+			report_projector_capture_rejection("Static Gray code: " + rejection +
+				". Move the checkerboard to a different position, then hold it still.");
+			projectorImage=static_gray_patterns.front().clone();
+			return false;
+		}
+		static_gray_initial_board_points=boardPoints;
+		camera_calibrator.compute_candidate_board_pose(boardPoints,static_gray_board_rotation,static_gray_board_translation);
+		const auto boardObjects=camera_calibrator.get_candidate_object_points();
+		const Size boardSize=camera_calibrator.get_board_size();
+		if (boardObjects.size()<static_cast<size_t>(boardSize.width+1)) {
+			static_gray_capture_armed=false;
+			report_projector_capture_rejection("Static Gray code: checkerboard object model is incomplete");
+			return false;
+		}
+		const Point3f axisX=boardObjects[1]-boardObjects[0];
+		const Point3f axisY=boardObjects[boardSize.width]-boardObjects[0];
+		static_gray_board_samples.clear();
+		for (int squareY=0;squareY<=boardSize.height;++squareY) for (int squareX=0;squareX<=boardSize.width;++squareX)
+			static_gray_board_samples.push_back(boardObjects[0]+axisX*(squareX-0.5f)+axisY*(squareY-0.5f));
+		projectPoints(static_gray_board_samples,static_gray_board_rotation,static_gray_board_translation,
+			camera_calibrator.get_camera_matrix(),camera_calibrator.get_dist_coeffs(),static_gray_camera_samples);
+		static_gray_captures.clear();
+		static_gray_captures.push_back(gray);
+		static_gray_capture_index=1;
+		static_gray_capture_armed=false;
+		projectorImage=static_gray_patterns[1].clone();
+		cout << "Static Gray code: board pose accepted. HOLD THE CHECKERBOARD STILL for "
+			<< static_gray_patterns.size()-1 << " code frames and the final motion check." << endl;
+		return false;
+	}
+
+	// Capture the currently displayed white/Gray/inverse frame and queue the next.
+	if (static_gray_capture_index<static_gray_patterns.size()) {
+		static_gray_captures.push_back(gray);
+		++static_gray_capture_index;
+		if (static_gray_capture_index<static_gray_patterns.size())
+			projectorImage=static_gray_patterns[static_gray_capture_index].clone();
+		else {
+			projectorImage=static_gray_patterns.front().clone();
+			cout << "Static Gray code: sequence captured; checking whether the board remained static." << endl;
+		}
+		return false;
+	}
+
+	// The final displayed frame is black again. Re-detect the board and reject
+	// the entire sequence if it moved while the code frames were captured.
+	if (!camera_calibrator.find_board(image)) {
+		cout << "Static Gray-code sample rejected: BOARD NOT STATIC ENOUGH or no longer fully visible; "
+			<< "return to a stable complete-board pose and hold still." << endl;
+		reset_static_gray_code(projectorImage);
+		return false;
+	}
+	const auto finalBoardPoints=camera_calibrator.get_detected_board_points();
+	double squaredMotion=0;
+	if (finalBoardPoints.size()!=static_gray_initial_board_points.size()) squaredMotion=std::numeric_limits<double>::infinity();
+	else for (size_t i=0;i<finalBoardPoints.size();++i) {
+		const Point2f delta=finalBoardPoints[i]-static_gray_initial_board_points[i];
+		squaredMotion+=delta.dot(delta);
+	}
+	const double motionRms=std::sqrt(squaredMotion/std::max<size_t>(1,finalBoardPoints.size()));
+	if (!std::isfinite(motionRms) || motionRms>FLAGS_static_gray_max_board_motion_px) {
+		cout << "Static Gray-code sample rejected: BOARD NOT STATIC ENOUGH; corner RMS motion=" << motionRms
+			<< " px > " << FLAGS_static_gray_max_board_motion_px << " px. Hold still for the complete sequence." << endl;
+		reset_static_gray_code(projectorImage);
+		return false;
+	}
+
+	vector<Point2f> projectorPoints,cameraPoints;
+	vector<Point3f> objectPoints;
+	Mat debugImage;
+	string decodeReason;
+	GrayCodeDecodeDiagnostics decodeDiagnostics;
+	const bool decoded=decode_gray_code_samples(static_gray_captures,projector_calibrator.get_image_size(),
+		static_cast<int>(FLAGS_static_gray_projector_block_size),
+		static_cast<int>(FLAGS_static_gray_phase_period_px),
+		static_gray_camera_samples,static_gray_board_samples,
+		FLAGS_static_gray_min_direct_contrast,FLAGS_static_gray_min_bit_contrast,
+		static_cast<int>(FLAGS_static_gray_sample_radius_px),projectorPoints,cameraPoints,objectPoints,&debugImage,decodeReason,
+		&decodeDiagnostics);
+	putText(debugImage,decodeReason,Point(10,25),FONT_HERSHEY_SIMPLEX,0.6,decoded ? Scalar(0,255,0) : Scalar(0,0,255),2,LINE_AA);
+	imshow("ImageThresholded",debugImage);
+	if (!decoded) {
+		cout << "Static Gray-code sample rejected: " << decodeReason
+			<< ". Keep exposure fixed, improve projector contrast and hold the board still." << endl;
+		if (decodeDiagnostics.phaseValid==0) {
+			++static_gray_consecutive_zero_phase_failures;
+			if (static_gray_consecutive_zero_phase_failures>=2) {
+				static_gray_waiting_for_pose_change=true;
+				static_gray_last_failed_board_points=static_gray_initial_board_points;
+				cout << "Static Gray/phase capture PAUSED after two consecutive zero-phase sequences. "
+					<< "Move the checkerboard by at least " << FLAGS_minimum_board_motion_px << " px RMS to retry." << endl;
+			}
+		}
+		else static_gray_consecutive_zero_phase_failures=0;
+		reset_static_gray_code(projectorImage);
+		return false;
+	}
+	static_gray_consecutive_zero_phase_failures=0;
+	static_gray_waiting_for_pose_change=false;
+	static_gray_last_failed_board_points.clear();
+
+	projector_calibrator.imagePoints.push_back(projectorPoints);
+	projector_calibrator.objectPoints.push_back(objectPoints);
+	projector_calibrator.frameMeasuredCircleImagePoints.push_back(cameraPoints);
+	projector_calibrator.frameMeasuredBoardImagePoints.push_back(static_gray_initial_board_points);
+	projector_calibrator.camBoardRotations.push_back(static_gray_board_rotation.clone());
+	projector_calibrator.camBoardTranslations.push_back(static_gray_board_translation.clone());
+	camera_calibrator.imagePointsCamObj.push_back(cameraPoints);
+	camera_calibrator.get_object_points().push_back(objectPoints);
+	camera_calibrator.boardRotations.push_back(static_gray_board_rotation.clone());
+	camera_calibrator.boardTranslations.push_back(static_gray_board_translation.clone());
+	commit_accepted_board_sample(static_gray_initial_board_points);
+	last_projector_capture_rejection.clear();
+	cout << "Static Gray-code view " << projector_calibrator.imagePoints.size() << " accepted: " << decodeReason << '.' << endl;
+
+	const bool projectorReady=projector_calibrator.calibrate(camera_calibrator.get_image_size());
+	if (projectorReady && stereo_calibrate()) {
+		cout << "FINISHED WITH STATIC PROJECTOR CALIBRATION. The initial projector and stereo models are ready." << endl;
+		return true;
+	}
+	cout << "READY TO MOVE THE CHECKERBOARD TO A DIFFERENT POSITION. Vary position, distance and tilt; "
+		<< "then hold it still when the next Gray-code sequence starts." << endl;
+	reset_static_gray_code(projectorImage);
+	return false;
+}
+
 bool Tinker::calibration::calibrate_camera(Mat image)
 {
 	if (!camera_calibrator.find_board(image)) {
@@ -103,11 +306,47 @@ void Tinker::calibration::switch_to_calibration_mode()
 	camera_calibrator.set_to_calibration_mode();
 }
 
-void Tinker::calibration::load(string cameraConfig, string projectorConfig, string extrinsicsConfig)
+Tinker::CalibrationReuseStage Tinker::calibration::load_saved_calibration(const string& projectorConfig)
 {
-	camera_calibrator.load(cameraConfig);
-	projector_calibrator.load(projectorConfig);
-	loadExtrinsics(extrinsicsConfig);
+	if (!camera_calibrator.is_calibrated()) {
+		cout << "Calibration reuse: no valid camera calibration; starting camera calibration." << endl;
+		return CalibrationReuseStage::None;
+	}
+	cv::FileStorage fs(projectorConfig,cv::FileStorage::READ);
+	if (!fs.isOpened()) {
+		cout << "Calibration reuse: camera calibration loaded, but no projector calibration is available." << endl;
+		return CalibrationReuseStage::CameraOnly;
+	}
+	const bool hasFinal=!fs["Rotation_Vector"].empty() && !fs["Translation_Vector"].empty();
+	const bool hasStatic=!fs["static_Rotation_Vector"].empty() && !fs["static_Translation_Vector"].empty();
+	if (!hasFinal && !hasStatic) {
+		cout << "Calibration reuse: projector file has no saved stereo transform; redoing static projector calibration." << endl;
+		return CalibrationReuseStage::CameraOnly;
+	}
+	if (!projector_calibrator.load(projectorConfig)) {
+		cout << "Calibration reuse: projector intrinsics are incompatible; redoing static projector calibration." << endl;
+		return CalibrationReuseStage::CameraOnly;
+	}
+	const string prefix=hasFinal ? "" : "static_";
+	fs[prefix+"Rotation_Vector"] >> rotCamToProj;
+	fs[prefix+"Translation_Vector"] >> transCamToProj;
+	fs[prefix+"stereo_rms_error"] >> last_dynamic_stereo_rms;
+	if (rotCamToProj.total()!=3 || transCamToProj.total()!=3 || !checkRange(rotCamToProj) || !checkRange(transCamToProj)) {
+		rotCamToProj.release(); transCamToProj.release();
+		cout << "Calibration reuse: saved stereo transform is invalid; redoing static projector calibration." << endl;
+		return CalibrationReuseStage::CameraOnly;
+	}
+	rotCamToProj.convertTo(rotCamToProj,CV_64F);
+	transCamToProj.convertTo(transCamToProj,CV_64F);
+	rotCamToProj=rotCamToProj.reshape(1,3).clone();
+	transCamToProj=transCamToProj.reshape(1,3).clone();
+	if (!std::isfinite(last_dynamic_stereo_rms)) last_dynamic_stereo_rms=0.0;
+	if (hasFinal) {
+		cout << "Calibration reuse: loaded final camera/projector calibration; entering tracking." << endl;
+		return CalibrationReuseStage::Complete;
+	}
+	cout << "Calibration reuse: loaded static projector calibration; resuming dynamic calibration." << endl;
+	return CalibrationReuseStage::StaticProjector;
 }
 
 bool Tinker::calibration::should_accept_board_sample(const vector<Point2f>& boardPoints, string* rejectionReason) const
@@ -184,13 +423,6 @@ void Tinker::calibration::reset_sample_capture_gate()
 	last_accepted_board_points.clear();
 	has_accepted_board_sample = false;
 	last_projector_capture_rejection.clear();
-}
-
-void Tinker::calibration::loadExtrinsics(string filename, bool absolute)
-{
-	cv::FileStorage fs(filename, cv::FileStorage::READ);
-	fs["Rotation_Vector"] >> rotCamToProj;
-	fs["Translation_Vector"] >> transCamToProj;
 }
 
 // obtains points in the projector image coordinates that correspond to points in real world coordinates. This can be used as a measure of accuracy of projected points?
@@ -449,6 +681,8 @@ void Tinker::calibration::draw_camera_debug(Mat& image)
 	cv::circle(image, chessImgPts.front(), 7, Scalar(0, 255, 255), 2);
 	cv::putText(image, "origin (0,0)", chessImgPts.front() + Point2f(5, -8), cv::FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 255), 1);
 	draw_wrapped_status(image,camera_calibrator.get_orientation_status(),Scalar(0,255,255));
+	if (static_gray_initialized && static_gray_capture_index==0 && !static_gray_capture_armed)
+		draw_wrapped_status(image,"Static Gray/phase READY: prop the board, then press SPACE or ENTER",Scalar(0,255,0));
 
 	const cv::Mat cameraMatrix = camera_calibrator.get_camera_matrix();
 	const cv::Mat distCoeffs = camera_calibrator.get_dist_coeffs();
@@ -648,7 +882,7 @@ bool Tinker::calibration::stereo_calibrate()
 	return true;
 }
 
-void Tinker::calibration::save_stereo_calibration() const
+void Tinker::calibration::save_stereo_calibration(bool staticPhase) const
 {
 	if (projector_output_filename.empty() || rotCamToProj.empty() || transCamToProj.empty() ||
 		!std::isfinite(last_dynamic_stereo_rms)) {
@@ -663,10 +897,13 @@ void Tinker::calibration::save_stereo_calibration() const
 		throw std::runtime_error("Unable to append stereo calibration to: " + projector_output_filename);
 	}
 
-	fs << "Rotation_Vector" << rotCamToProj;
-	fs << "Rotation_Matrix" << rotationMatrix;
-	fs << "Translation_Vector" << transCamToProj;
-	fs << "stereo_rms_error" << last_dynamic_stereo_rms;
+	const string prefix=staticPhase ? "static_" : "";
+	fs << prefix+"Rotation_Vector" << rotCamToProj;
+	fs << prefix+"Rotation_Matrix" << rotationMatrix;
+	fs << prefix+"Translation_Vector" << transCamToProj;
+	fs << prefix+"stereo_rms_error" << last_dynamic_stereo_rms;
+	cout << (staticPhase ? "Saved static projector calibration to " : "Saved final projector calibration to ")
+		<< projector_output_filename << endl;
 }
 
 

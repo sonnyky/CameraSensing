@@ -5,6 +5,7 @@
 #include "projection_rejection_debug.hpp"
 
 namespace Tinker {
+	enum class CalibrationReuseStage { None, CameraOnly, StaticProjector, Complete };
 
 	using steady_clock = std::chrono::steady_clock;
 	//enum { STANDBY = 0, PROJECTOR_CAPTURING = 1, PROJECTOR_CALIBRATED = 2 , DYNAMIC_DETECTION = 3 };
@@ -31,18 +32,19 @@ namespace Tinker {
 			Pattern _patternType, float px, float py);
 
 		void set_projector_static_image_points();
+		void reset_static_gray_code(Mat& projectorImage);
+		void request_static_gray_capture();
+		bool process_static_gray_code_frame(const Mat& image,Mat& projectorImage);
 
 		bool calibrate_camera(Mat image);
 		void switch_to_calibration_mode();
 
-		void load(string cameraConfig, string projectorConfig, string extrinsicsConfig);
+		CalibrationReuseStage load_saved_calibration(const string& projectorConfig);
 		
 		bool add_projected(cv::Mat img, cv::Mat& processedImg);
 
 		const cv::Mat & get_cam_to_proj_rotation() { return rotCamToProj; }
 		const cv::Mat & get_cam_to_proj_translation() { return transCamToProj; }
-		void loadExtrinsics(string filename, bool absolute = false);
-
 		ProjectionResult get_projected(const vector<Point3f> & pts,
 			const cv::Mat & rotObjToCam,
 			const cv::Mat & transObjToCam);
@@ -66,7 +68,7 @@ namespace Tinker {
 		bool calibrate_projector(Mat img);
 
 		bool stereo_calibrate();
-		void save_stereo_calibration() const;
+		void save_stereo_calibration(bool staticPhase = false) const;
 
 	private:
 
@@ -107,5 +109,18 @@ namespace Tinker {
 		double last_dynamic_stereo_rms = std::numeric_limits<double>::infinity();
 		string projector_output_filename;
 		ProjectorPatternSnapshot displayed_projector_pattern;
+		vector<Mat> static_gray_patterns;
+		vector<Mat> static_gray_captures;
+		size_t static_gray_capture_index = 0;
+		bool static_gray_initialized = false;
+		bool static_gray_capture_armed = false;
+		vector<Point2f> static_gray_initial_board_points;
+		vector<Point2f> static_gray_camera_samples;
+		vector<Point3f> static_gray_board_samples;
+		Mat static_gray_board_rotation;
+		Mat static_gray_board_translation;
+		uint64_t static_gray_consecutive_zero_phase_failures = 0;
+		bool static_gray_waiting_for_pose_change = false;
+		vector<Point2f> static_gray_last_failed_board_points;
 	};
 }

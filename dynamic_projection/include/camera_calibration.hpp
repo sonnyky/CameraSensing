@@ -85,6 +85,7 @@ namespace Tinker {
 
 		Mat get_camera_matrix() { return cameraMatrix; }
 		Mat get_dist_coeffs() { return distCoeffs; }
+		bool is_calibrated() const { return camera_is_calibrated; }
 
 		void load_camera_matrix(string fileName);
 
